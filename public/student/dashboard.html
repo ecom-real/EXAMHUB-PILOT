@@ -2,25 +2,158 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">`n  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>My Exams — ExamHub</title>
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* ── Exam card enhancements ── */
+    .exam-card {
+      background: var(--bg-white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 22px;
+      margin-bottom: 12px;
+      transition: box-shadow 0.22s ease, transform 0.22s ease, border-color 0.22s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .exam-card::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 0; bottom: 0;
+      width: 4px;
+      border-radius: 4px 0 0 4px;
+    }
+    .exam-card.status-available::before  { background: linear-gradient(180deg, var(--navy-500), var(--navy-400)); }
+    .exam-card.status-done-pass::before  { background: linear-gradient(180deg, var(--success), #34d399); }
+    .exam-card.status-done-fail::before  { background: linear-gradient(180deg, var(--danger), #f87171); }
+    .exam-card.status-in-progress::before{ background: linear-gradient(180deg, var(--warning), #fbbf24); }
+    .exam-card.status-locked::before     { background: linear-gradient(180deg, var(--text-light), #cbd5e1); }
+
+    .exam-card:hover { box-shadow: 0 8px 32px rgba(79,70,229,0.1); transform: translateY(-2px); border-color: var(--navy-100); }
+    [data-theme="dark"] .exam-card:hover { border-color: rgba(79,70,229,0.3); }
+
+    .exam-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .exam-card-left   { flex: 1; min-width: 0; }
+    .exam-card-right  { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; flex-shrink: 0; }
+
+    .exam-card-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .exam-card-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+      line-height: 1.3;
+    }
+    .exam-card-desc {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      margin-bottom: 12px;
+      line-height: 1.55;
+    }
+    .exam-card-meta {
+      display: flex;
+      gap: 14px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+    }
+    .exam-card-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-section-bar);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 3px 8px;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .exam-score-display {
+      text-align: right;
+    }
+    .exam-score-pct {
+      font-size: 1.6rem;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: -0.02em;
+    }
+    .exam-score-detail {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .exam-progress-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .exam-progress-label {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* List header */
+    .exams-list-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .exams-list-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Skeleton cards */
+    .exam-skeleton {
+      background: var(--bg-white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 22px;
+      margin-bottom: 12px;
+    }
+  </style>
 </head>
 <body>
   <div class="page-wrapper">
-    <!-- Top bar -->
+
+    <!-- Top Bar -->
     <div class="top-bar">
-      <div class="top-bar-brand"><div class="top-bar-logo">🎓</div> ExamHub</div>
+      <a href="/" class="top-bar-brand"><div class="top-bar-logo">🎓</div> ExamHub</a>
       <div class="top-bar-right">
-        <div class="top-bar-user">
+        <div class="top-bar-user" title="Signed in as candidate">
           <div class="top-bar-avatar" id="hdr-avatar">?</div>
-          <span id="hdr-name"></span>
+          <span id="hdr-name" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="logout()" style="color:rgba(255,255,255,.7);background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.15)">Sign Out</button>
+        <button class="btn btn-sm" onclick="logout()"
+                style="color:rgba(255,255,255,.7);background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.15);font-size:.77rem">
+          Sign Out
+        </button>
       </div>
     </div>
+
     <nav class="navbar" id="navbar"></nav>
 
+    <!-- Page Header -->
     <div class="page-header">
       <div class="page-header-inner">
         <div>
@@ -28,121 +161,326 @@
           <h1 id="welcome-heading">My Exams</h1>
           <p id="welcome-sub">View and start your assigned assessments</p>
         </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="badge badge-blue" id="exam-badge" style="font-size:.78rem;padding:5px 12px"></span>
+        </div>
       </div>
     </div>
 
     <div class="page-body">
       <div class="container">
+
         <!-- Stats -->
-        <div class="grid grid-4" style="margin-bottom:24px">
+        <div class="grid grid-4" style="margin-bottom:28px">
           <div class="stat-card blue animate-in">
             <div class="stat-icon blue">📋</div>
-            <div><div class="stat-value" id="stat-available">—</div><div class="stat-label">Available</div></div>
+            <div>
+              <div class="stat-value" id="stat-available">—</div>
+              <div class="stat-label">Available</div>
+            </div>
           </div>
-          <div class="stat-card green animate-in" style="animation-delay:.06s">
-            <div class="stat-icon green">✅</div>
-            <div><div class="stat-value" id="stat-completed">—</div><div class="stat-label">Completed</div></div>
+          <div class="stat-card teal animate-in" style="animation-delay:.06s">
+            <div class="stat-icon teal">✅</div>
+            <div>
+              <div class="stat-value" id="stat-completed">—</div>
+              <div class="stat-label">Completed</div>
+            </div>
           </div>
-          <div class="stat-card orange animate-in" style="animation-delay:.12s">
-            <div class="stat-icon orange">🏆</div>
-            <div><div class="stat-value" id="stat-passed">—</div><div class="stat-label">Passed</div></div>
+          <div class="stat-card green animate-in" style="animation-delay:.12s">
+            <div class="stat-icon green">🏆</div>
+            <div>
+              <div class="stat-value" id="stat-passed">—</div>
+              <div class="stat-label">Passed</div>
+            </div>
           </div>
-          <div class="stat-card blue animate-in" style="animation-delay:.18s">
-            <div class="stat-icon blue">📈</div>
-            <div><div class="stat-value" id="stat-avg">—</div><div class="stat-label">Avg Score</div></div>
+          <div class="stat-card purple animate-in" style="animation-delay:.18s">
+            <div class="stat-icon purple">📈</div>
+            <div>
+              <div class="stat-value" id="stat-avg">—</div>
+              <div class="stat-label">Avg Score</div>
+            </div>
           </div>
         </div>
 
-        <!-- Exams List -->
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-          <h2 style="font-size:1.05rem;font-weight:700">Available Assessments</h2>
-          <span class="badge badge-blue" id="exam-badge"></span>
+        <!-- Exams list -->
+        <div class="exams-list-header">
+          <div class="exams-list-title">
+            📚 Available Assessments
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="filter-status" class="form-control" style="width:auto;font-size:.8rem;padding:5px 10px"
+                    onchange="applyFilter()">
+              <option value="">All Exams</option>
+              <option value="available">Available</option>
+              <option value="completed">Completed</option>
+              <option value="in_progress">In Progress</option>
+            </select>
+          </div>
         </div>
-        <div id="exams-container"></div>
+
+        <!-- Skeleton loader (shown while loading) -->
+        <div id="skeleton-container">
+          <div class="exam-skeleton">
+            <div class="skeleton skeleton-title" style="width:45%"></div>
+            <div class="skeleton skeleton-text" style="width:70%"></div>
+            <div class="skeleton skeleton-text" style="width:35%"></div>
+          </div>
+          <div class="exam-skeleton">
+            <div class="skeleton skeleton-title" style="width:55%"></div>
+            <div class="skeleton skeleton-text" style="width:65%"></div>
+            <div class="skeleton skeleton-text" style="width:30%"></div>
+          </div>
+          <div class="exam-skeleton">
+            <div class="skeleton skeleton-title" style="width:40%"></div>
+            <div class="skeleton skeleton-text" style="width:75%"></div>
+            <div class="skeleton skeleton-text" style="width:40%"></div>
+          </div>
+        </div>
+
+        <div id="exams-container" style="display:none"></div>
       </div>
     </div>
   </div>
 
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <script src="/js/app.js"></script>
   <script>
     requireAuth('student');
     const user = getUser();
 
     // Header
-    const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+    const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     document.getElementById('hdr-avatar').textContent = initials;
-    document.getElementById('hdr-name').textContent = user.name;
+    document.getElementById('hdr-name').textContent   = user.name;
     document.getElementById('welcome-heading').textContent = `Welcome, ${user.name?.split(' ')[0] || 'Candidate'}!`;
     buildNavbar('My Exams');
+
+    let allExams = [], allResults = [], allPaymentStatuses = {};
 
     async function loadDashboard() {
       try {
         const [exams, results] = await Promise.all([apiFetch('/exams'), apiFetch('/results/mine')]);
+        allExams   = exams;
+        allResults = results;
 
+        // Payment status checks
+        await Promise.all(exams.map(async (exam) => {
+          try {
+            allPaymentStatuses[exam.id] = await apiFetch(`/payments/check/${exam.id}`);
+          } catch {
+            allPaymentStatuses[exam.id] = { free: true, paid: true, price: 0 };
+          }
+        }));
+
+        // Stats
         const completedIds = new Set(results.filter(r => r.status !== 'in_progress').map(r => r.exam_id));
-        const passedCount = results.filter(r => r.passed).length;
-        const avgScore = results.filter(r => r.percentage).reduce((s, r, _, a) => s + r.percentage / a.length, 0);
+        const passedCount  = results.filter(r => r.passed).length;
+        const scores       = results.filter(r => typeof r.percentage === 'number');
+        const avgScore     = scores.length
+          ? (scores.reduce((s, r) => s + r.percentage, 0) / scores.length)
+          : null;
 
-        document.getElementById('stat-available').textContent = exams.length;
-        document.getElementById('stat-completed').textContent = completedIds.size;
-        document.getElementById('stat-passed').textContent = passedCount;
-        document.getElementById('stat-avg').textContent = results.length ? avgScore.toFixed(0) + '%' : '—';
-        document.getElementById('exam-badge').textContent = `${exams.length} exam${exams.length !== 1 ? 's' : ''}`;
+        document.getElementById('stat-available').textContent  = exams.length;
+        document.getElementById('stat-completed').textContent  = completedIds.size;
+        document.getElementById('stat-passed').textContent     = passedCount;
+        document.getElementById('stat-avg').textContent        = avgScore !== null ? avgScore.toFixed(0) + '%' : '—';
+        document.getElementById('exam-badge').textContent      = `${exams.length} exam${exams.length !== 1 ? 's' : ''}`;
 
-        const container = document.getElementById('exams-container');
-        if (!exams.length) {
-          container.innerHTML = `<div class="card"><div class="empty-state"><div class="empty-icon">📭</div><h3>No exams available yet</h3><p>Check back later or contact your administrator.</p></div></div>`;
-          return;
-        }
+        // Hide skeleton, show content
+        document.getElementById('skeleton-container').style.display = 'none';
+        document.getElementById('exams-container').style.display    = '';
 
-        container.innerHTML = exams.map((exam, i) => {
-          const myResult = results.find(r => r.exam_id === exam.id && r.status !== 'in_progress');
-          const inProgress = results.find(r => r.exam_id === exam.id && r.status === 'in_progress');
-          const done = !!myResult;
-          const totalSections = exam.exam_sections?.length || 0;
-
-          return `<div class="card animate-in" style="margin-bottom:14px;animation-delay:${i*.06}s">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">
-              <div style="flex:1;min-width:0">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
-                  <h3 style="font-size:1rem;font-weight:700;margin:0">${esc(exam.title)}</h3>
-                  ${exam.exam_code ? `<span class="badge badge-grey">${esc(exam.exam_code)}</span>` : ''}
-                  ${done ? (myResult.passed ? '<span class="badge badge-success">✓ Passed</span>' : '<span class="badge badge-danger">✕ Failed</span>') : (inProgress ? '<span class="badge badge-warning">⏸ In Progress</span>' : '<span class="badge badge-blue">Available</span>')}
-                </div>
-                <p style="color:var(--text-muted);font-size:.83rem;margin-bottom:10px">${esc(exam.description || 'No description')}</p>
-                <div style="display:flex;gap:16px;font-size:.8rem;color:var(--text-muted);flex-wrap:wrap">
-                  <span>⏱ ${exam.total_duration} min</span>
-                  <span>🎯 Pass: ${exam.pass_percentage}%</span>
-                  <span>📊 ${exam.total_marks} marks</span>
-                  ${totalSections > 0 ? `<span>📂 ${totalSections} sections</span>` : ''}
-                </div>
-              </div>
-              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0">
-                ${done
-                  ? `<div style="text-align:right">
-                      <div style="font-size:1.5rem;font-weight:800;color:${myResult.passed ? 'var(--success)' : 'var(--danger)'}">${(myResult.percentage||0).toFixed(1)}%</div>
-                      <div style="font-size:.75rem;color:var(--text-muted)">${myResult.total_score}/${myResult.total_marks} marks</div>
-                    </div>
-                    <a href="/student/results.html?id=${myResult.id}" class="btn btn-secondary btn-sm">View Result →</a>`
-                  : inProgress
-                    ? `<a href="/student/exam.html?id=${exam.id}" class="btn btn-warning btn-sm">▶ Resume Exam</a>`
-                    : `<a href="/student/exam.html?id=${exam.id}" class="btn btn-primary">Start Exam →</a>`
-                }
-              </div>
-            </div>
-            ${done ? `<div class="divider" style="margin:14px 0"></div>
-              <div style="display:flex;align-items:center;gap:10px">
-                <div class="progress" style="flex:1"><div class="progress-fill${myResult.passed ? ' success' : ' danger'}" style="width:${myResult.percentage||0}%"></div></div>
-                <span style="font-size:.78rem;color:var(--text-muted);white-space:nowrap">${(myResult.percentage||0).toFixed(1)}% · ${formatDate(myResult.submitted_at)}</span>
-              </div>` : ''}
-          </div>`;
-        }).join('');
+        renderExams(exams, results);
       } catch (err) {
+        document.getElementById('skeleton-container').style.display = 'none';
+        document.getElementById('exams-container').style.display    = '';
         showToast('Failed to load: ' + err.message, 'error');
       }
     }
 
+    function applyFilter() {
+      const val = document.getElementById('filter-status').value;
+      if (!val) { renderExams(allExams, allResults); return; }
+      const filtered = allExams.filter(exam => {
+        const myResult  = allResults.find(r => r.exam_id === exam.id && r.status !== 'in_progress');
+        const inProgr   = allResults.find(r => r.exam_id === exam.id && r.status === 'in_progress');
+        const ps        = allPaymentStatuses[exam.id] || { free: true, paid: true };
+        if (val === 'available')   return !myResult && !inProgr && (ps.paid || ps.free);
+        if (val === 'completed')   return !!myResult;
+        if (val === 'in_progress') return !!inProgr;
+        return true;
+      });
+      renderExams(filtered, allResults);
+    }
+
+    function renderExams(exams, results) {
+      const container = document.getElementById('exams-container');
+      if (!exams.length) {
+        container.innerHTML = `
+          <div class="card">
+            <div class="empty-state">
+              <div class="empty-icon">📭</div>
+              <h3>No exams found</h3>
+              <p>Try a different filter, or check back later for new assessments.</p>
+            </div>
+          </div>`;
+        return;
+      }
+
+      container.innerHTML = exams.map((exam, i) => {
+        const myResult   = results.find(r => r.exam_id === exam.id && r.status !== 'in_progress');
+        const inProgress = results.find(r => r.exam_id === exam.id && r.status === 'in_progress');
+        const done       = !!myResult;
+        const totalSecs  = exam.exam_sections?.length || 0;
+        const ps         = allPaymentStatuses[exam.id] || { free: true, paid: true, price: 0 };
+        const isPaid     = ps.paid;
+        const isFree     = ps.free;
+        const examPrice  = ps.price || 0;
+
+        // Determine card status class
+        let statusClass;
+        if (done)                    statusClass = myResult.passed ? 'status-done-pass' : 'status-done-fail';
+        else if (inProgress)         statusClass = 'status-in-progress';
+        else if (!isPaid && !isFree) statusClass = 'status-locked';
+        else                         statusClass = 'status-available';
+
+        // Badge HTML
+        let statusBadge;
+        if (done)                    statusBadge = myResult.passed
+                                       ? '<span class="badge badge-success">✓ Passed</span>'
+                                       : '<span class="badge badge-danger">✕ Failed</span>';
+        else if (inProgress)         statusBadge = '<span class="badge badge-warning">⏸ In Progress</span>';
+        else if (!isPaid && !isFree) statusBadge = '<span class="badge badge-grey" style="background:#fef3c7;color:#92400e;border-color:#fde68a">🔒 Locked</span>';
+        else                         statusBadge = '<span class="badge badge-blue">Available</span>';
+
+        // Action button
+        let actionBtn;
+        if (done) {
+          actionBtn = `<a href="/student/results.html?id=${myResult.id}" class="btn btn-secondary btn-sm">View Result →</a>`;
+        } else if (!isPaid && !isFree) {
+          actionBtn = `<button id="pay-btn-${exam.id}" class="btn btn-primary"
+                         onclick="handlePayment('${exam.id}','${esc(exam.title)}')">
+                         💳 Pay ₹${examPrice.toFixed(0)} &amp; Unlock
+                       </button>`;
+        } else if (inProgress) {
+          actionBtn = `<a href="/student/exam.html?id=${exam.id}" class="btn btn-warning btn-sm">▶ Resume Exam</a>`;
+        } else {
+          actionBtn = `<a href="/student/exam.html?id=${exam.id}" class="btn btn-primary">Start Exam →</a>`;
+        }
+
+        // Score display (if done)
+        const scoreHtml = done ? `
+          <div class="exam-score-display">
+            <div class="exam-score-pct" style="color:${myResult.passed ? 'var(--success)' : 'var(--danger)'}">
+              ${(myResult.percentage || 0).toFixed(1)}%
+            </div>
+            <div class="exam-score-detail">${myResult.total_score}/${myResult.total_marks} pts</div>
+          </div>` : '';
+
+        // Progress bar (if done)
+        const progressHtml = done ? `
+          <div class="exam-progress-row">
+            <div class="progress" style="flex:1">
+              <div class="progress-fill ${myResult.passed ? 'success' : 'danger'}"
+                   style="width:${myResult.percentage || 0}%"></div>
+            </div>
+            <span class="exam-progress-label">${(myResult.percentage || 0).toFixed(1)}% · ${formatDate(myResult.submitted_at)}</span>
+          </div>` : '';
+
+        return `
+          <div class="exam-card ${statusClass} animate-in" style="animation-delay:${i * 0.05}s">
+            <div class="exam-card-header">
+              <div class="exam-card-left">
+                <div class="exam-card-title-row">
+                  <h3 class="exam-card-title">${!isPaid && !isFree ? '🔒 ' : ''}${esc(exam.title)}</h3>
+                  ${exam.exam_code ? `<span class="badge badge-grey">${esc(exam.exam_code)}</span>` : ''}
+                  ${!isFree ? `<span class="badge badge-purple">₹${examPrice.toFixed(0)}</span>` : ''}
+                  ${statusBadge}
+                </div>
+                <p class="exam-card-desc">${esc(exam.description || 'No description provided.')}</p>
+                <div class="exam-card-meta">
+                  <span class="exam-card-meta-item">⏱ ${exam.total_duration} min</span>
+                  <span class="exam-card-meta-item">🎯 Pass: ${exam.pass_percentage}%</span>
+                  <span class="exam-card-meta-item">📊 ${exam.total_marks} marks</span>
+                  ${totalSecs > 0 ? `<span class="exam-card-meta-item">📂 ${totalSecs} sections</span>` : ''}
+                </div>
+              </div>
+              <div class="exam-card-right">
+                ${scoreHtml}
+                ${actionBtn}
+              </div>
+            </div>
+            ${progressHtml}
+          </div>`;
+      }).join('');
+    }
+
     loadDashboard();
+
+    // ── Razorpay Payment Handler ──────────────────────────────────
+    async function handlePayment(examId, examTitle) {
+      const btn = document.getElementById(`pay-btn-${examId}`);
+      if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
+      try {
+        const orderData = await apiFetch('/payments/create-order', {
+          method: 'POST',
+          body: { exam_id: examId }
+        });
+        if (orderData.free || orderData.already_paid) {
+          showToast('Exam is now unlocked!', 'success');
+          await loadDashboard();
+          return;
+        }
+        const options = {
+          key:         orderData.key_id,
+          amount:      orderData.amount,
+          currency:    orderData.currency,
+          name:        'ExamHub',
+          description: orderData.exam_title,
+          order_id:    orderData.order_id,
+          prefill:     { name: orderData.student_name, email: orderData.student_email },
+          theme:       { color: '#4f46e5' },
+          handler: async function (response) {
+            try {
+              showLoading('Verifying payment…');
+              await apiFetch('/payments/verify', {
+                method: 'POST',
+                body: {
+                  razorpay_order_id:   response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature:  response.razorpay_signature
+                }
+              });
+              hideLoading();
+              showToast('Payment successful! Exam unlocked 🎉', 'success');
+              await loadDashboard();
+            } catch (err) {
+              hideLoading();
+              showToast('Verification failed: ' + err.message, 'error');
+            }
+          },
+          modal: {
+            ondismiss: function () {
+              if (btn) {
+                btn.disabled    = false;
+                btn.textContent = `Pay ₹${(orderData.amount / 100).toFixed(0)} & Unlock`;
+              }
+            }
+          }
+        };
+        const rzp = new Razorpay(options);
+        rzp.on('payment.failed', function (r) {
+          showToast('Payment failed: ' + r.error.description, 'error');
+          if (btn) { btn.disabled = false; btn.textContent = `Pay ₹${(orderData.amount / 100).toFixed(0)} & Unlock`; }
+        });
+        rzp.open();
+      } catch (err) {
+        showToast('Error: ' + err.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Pay & Unlock'; }
+      }
+    }
+
+    function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
   </script>
 </body>
 </html>

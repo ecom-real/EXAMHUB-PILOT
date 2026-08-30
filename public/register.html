@@ -2,110 +2,463 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">`n  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <title>Candidate Registration — ExamHub</title>
-  <meta name="description" content="Register as a candidate on ExamHub assessment platform.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>Create Account — ExamHub</title>
+  <meta name="description" content="Register as a candidate on ExamHub to access your assigned assessments.">
   <link rel="stylesheet" href="/css/style.css">
+  <style>
+    /* ── Register-specific enhancements ── */
+
+    /* Sidebar section card */
+    .reg-sidebar-card {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 12px;
+      padding: 18px;
+      margin-top: 32px;
+    }
+    .reg-sidebar-card-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+    }
+
+    /* Password strength meter */
+    .pw-strength-bar {
+      height: 3px;
+      border-radius: 99px;
+      background: var(--border);
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .pw-strength-fill {
+      height: 100%;
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+    .pw-strength-text {
+      font-size: 0.71rem;
+      font-weight: 600;
+      margin-top: 4px;
+      min-height: 16px;
+      transition: color 0.2s;
+    }
+
+    /* Steps indicator at top of form */
+    .form-steps {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 28px;
+    }
+    .form-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+    .form-step-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      flex-shrink: 0;
+      transition: all 0.3s;
+    }
+    .form-step.active   .form-step-dot { background: linear-gradient(135deg, var(--navy-600), var(--violet-600)); color: white; box-shadow: 0 2px 8px rgba(79,70,229,0.4); }
+    .form-step.done     .form-step-dot { background: var(--success); color: white; }
+    .form-step-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .form-step.active .form-step-label { color: var(--navy-600); }
+    .form-step.done   .form-step-label { color: var(--success); }
+    .form-step-line {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      border-radius: 99px;
+      margin: 0 8px;
+    }
+    .form-step-line.done { background: var(--success); }
+
+    /* Section headings inside form */
+    .form-section-heading {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 20px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Password wrapper */
+    .pw-wrapper { position: relative; }
+    .pw-wrapper .form-control { padding-right: 44px; }
+
+    /* Terms checkbox styled */
+    .terms-check-card {
+      background: var(--navy-50);
+      border: 1px solid var(--navy-100);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .terms-check-card:hover { border-color: var(--navy-300); }
+    .terms-check-card.checked { border-color: var(--navy-500); background: var(--navy-50); }
+    .terms-check-card input { margin-top: 2px; flex-shrink: 0; accent-color: var(--navy-600); width: 15px; height: 15px; }
+    .terms-check-label { font-size: 0.82rem; color: var(--text-secondary); line-height: 1.55; cursor: pointer; }
+    [data-theme="dark"] .terms-check-card { background: rgba(79,70,229,0.06); border-color: rgba(79,70,229,0.2); }
+
+    .sidebar-back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: rgba(255,255,255,0.5);
+      font-size: 0.82rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: color 0.2s;
+      margin-top: auto;
+      padding-top: 20px;
+    }
+    .sidebar-back:hover { color: rgba(255,255,255,0.85); }
+  </style>
 </head>
 <body>
   <div class="auth-page">
+
+    <!-- ══ LEFT SIDEBAR ══ -->
     <div class="auth-sidebar">
       <div class="auth-brand">
-        <div class="auth-brand-icon">🎓</div>
-        <div>
-          <div class="auth-brand-name">ExamHub</div>
-          <div class="auth-brand-tag">Professional Assessment Platform</div>
+        <a href="/" style="text-decoration:none;display:flex;align-items:center;gap:12px;color:inherit">
+          <div class="auth-brand-icon">🎓</div>
+          <div>
+            <div class="auth-brand-name">ExamHub</div>
+            <div class="auth-brand-tag">Professional Assessment Platform</div>
+          </div>
+        </a>
+      </div>
+
+      <h2 class="auth-headline">Join thousands of candidates on ExamHub</h2>
+      <p class="auth-subtitle">Create your candidate profile to access scheduled assessments assigned by your organisation or institution.</p>
+
+      <div class="auth-features">
+        <div class="auth-feature">
+          <div class="auth-feature-icon">🚀</div>
+          <div class="auth-feature-text">
+            <strong>Quick Setup</strong>
+            <span>Register in under 2 minutes</span>
+          </div>
+        </div>
+        <div class="auth-feature">
+          <div class="auth-feature-icon">🔒</div>
+          <div class="auth-feature-text">
+            <strong>Secure & Private</strong>
+            <span>Your data is encrypted end-to-end</span>
+          </div>
+        </div>
+        <div class="auth-feature">
+          <div class="auth-feature-icon">📱</div>
+          <div class="auth-feature-text">
+            <strong>Any Device</strong>
+            <span>Works on phone, tablet & desktop</span>
+          </div>
+        </div>
+        <div class="auth-feature">
+          <div class="auth-feature-icon">📊</div>
+          <div class="auth-feature-text">
+            <strong>Instant Results</strong>
+            <span>Get scored the moment you submit</span>
+          </div>
         </div>
       </div>
-      <h2 class="auth-headline">Register as a Candidate</h2>
-      <p class="auth-subtitle">Create your candidate profile to access scheduled assessments assigned to you by your organisation or institution.</p>
-      <div style="margin-top:48px;padding:20px;background:rgba(255,255,255,0.06);border-radius:var(--radius-md);border:1px solid rgba(255,255,255,0.1)">
-        <div style="font-size:.78rem;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Already registered?</div>
-        <a href="/login.html" class="btn btn-outline" style="border-color:rgba(255,255,255,0.3);color:rgba(255,255,255,0.8);width:100%;justify-content:center">← Back to Login</a>
+
+      <!-- Already have account -->
+      <div class="reg-sidebar-card">
+        <div class="reg-sidebar-card-label">Already have an account?</div>
+        <a href="/login.html" class="btn btn-outline" style="border-color:rgba(255,255,255,0.25);color:rgba(255,255,255,0.8);width:100%;justify-content:center;background:rgba(255,255,255,0.04)">
+          ← Back to Login
+        </a>
       </div>
+
+      <a href="/" class="sidebar-back">← Back to Home</a>
     </div>
 
+    <!-- ══ RIGHT FORM PANEL ══ -->
     <div class="auth-main">
-      <div class="auth-form-card animate-in" style="max-width:500px">
-        <h1 class="auth-form-title">Create Your Profile</h1>
-        <p class="auth-form-subtitle">All fields marked * are required</p>
+      <div class="auth-form-card animate-in" style="max-width:520px">
 
-        <div id="reg-alert" style="display:none"></div>
+        <!-- Header -->
+        <h1 class="auth-form-title">Create your account</h1>
+        <p class="auth-form-subtitle">Fill in your details to get started — it only takes a minute.</p>
 
-        <form id="reg-form">
+        <!-- Step indicator -->
+        <div class="form-steps" id="form-steps" aria-label="Registration progress">
+          <div class="form-step active" id="step-1">
+            <div class="form-step-dot">1</div>
+            <span class="form-step-label">Identity</span>
+          </div>
+          <div class="form-step-line" id="line-1"></div>
+          <div class="form-step" id="step-2">
+            <div class="form-step-dot">2</div>
+            <span class="form-step-label">Contact</span>
+          </div>
+          <div class="form-step-line" id="line-2"></div>
+          <div class="form-step" id="step-3">
+            <div class="form-step-dot">3</div>
+            <span class="form-step-label">Security</span>
+          </div>
+        </div>
+
+        <!-- Alert -->
+        <div id="reg-alert" style="display:none" role="alert"></div>
+
+        <form id="reg-form" novalidate>
+
+          <!-- ── SECTION 1: Identity ── -->
+          <div class="form-section-heading">👤 Your Identity</div>
           <div class="grid grid-2">
             <div class="form-group">
               <label class="form-label required" for="name">Full Name</label>
-              <input class="form-control" type="text" id="name" placeholder="e.g. Rajkumar Singh" required>
+              <input class="form-control" type="text" id="name" placeholder="e.g. Aarav Sharma" required autocomplete="name">
             </div>
             <div class="form-group">
-              <label class="form-label" for="roll">Roll / Registration No.</label>
-              <input class="form-control" type="text" id="roll" placeholder="e.g. TCS2024001">
+              <label class="form-label" for="roll">
+                Roll / Reg. No.
+                <span style="font-size:.7rem;color:var(--text-light);font-weight:400">(optional)</span>
+              </label>
+              <input class="form-control" type="text" id="roll" placeholder="e.g. TCS2024001" autocomplete="off">
             </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label required" for="email">Email Address</label>
-            <input class="form-control" type="email" id="email" placeholder="yourname@example.com" required>
           </div>
 
           <div class="grid grid-2">
             <div class="form-group">
-              <label class="form-label" for="phone">Phone Number</label>
-              <input class="form-control" type="tel" id="phone" placeholder="+91 98765 43210">
+              <label class="form-label" for="dob">Date of Birth</label>
+              <input class="form-control" type="date" id="dob" autocomplete="bday">
             </div>
             <div class="form-group">
-              <label class="form-label" for="dob">Date of Birth</label>
-              <input class="form-control" type="date" id="dob">
+              <label class="form-label" for="gender">Gender</label>
+              <select class="form-control" id="gender" autocomplete="sex">
+                <option value="">Prefer not to say</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
             </div>
           </div>
 
+          <!-- ── SECTION 2: Contact ── -->
+          <div class="form-section-heading">📧 Contact Details</div>
           <div class="form-group">
-            <label class="form-label" for="gender">Gender</label>
-            <select class="form-control" id="gender">
-              <option value="">Prefer not to say</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="other">Other</option>
-            </select>
+            <label class="form-label required" for="email">Email Address</label>
+            <div class="input-group">
+              <span class="input-icon">✉</span>
+              <input class="form-control" type="email" id="email" placeholder="yourname@example.com" required autocomplete="email">
+            </div>
+            <div class="form-hint">Use an email you check regularly — we'll send your results here.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="phone">Phone Number <span style="font-size:.7rem;color:var(--text-light);font-weight:400">(optional)</span></label>
+            <div class="input-group">
+              <span class="input-icon">📱</span>
+              <input class="form-control" type="tel" id="phone" placeholder="+91 98765 43210" autocomplete="tel">
+            </div>
           </div>
 
+          <!-- ── SECTION 3: Security ── -->
+          <div class="form-section-heading">🔒 Set Your Password</div>
           <div class="grid grid-2">
             <div class="form-group">
               <label class="form-label required" for="password">Password</label>
-              <input class="form-control" type="password" id="password" placeholder="Minimum 8 characters" required minlength="8">
+              <div class="pw-wrapper">
+                <input class="form-control" type="password" id="password"
+                       placeholder="Min. 8 characters" required minlength="8"
+                       autocomplete="new-password" oninput="checkPwStrength(this.value)">
+                <button type="button" class="pw-toggle input-suffix" onclick="togglePw('password','eye1')"
+                        aria-label="Toggle password visibility">
+                  <svg id="eye1" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                    <path d="M1 12S5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="pw-strength-bar"><div class="pw-strength-fill" id="pw-fill"></div></div>
+              <div class="pw-strength-text" id="pw-text"></div>
             </div>
             <div class="form-group">
               <label class="form-label required" for="confirm-pass">Confirm Password</label>
-              <input class="form-control" type="password" id="confirm-pass" placeholder="Re-enter password" required>
+              <div class="pw-wrapper">
+                <input class="form-control" type="password" id="confirm-pass"
+                       placeholder="Re-enter password" required
+                       autocomplete="new-password" oninput="checkConfirm()">
+                <button type="button" class="pw-toggle input-suffix" onclick="togglePw('confirm-pass','eye2')"
+                        aria-label="Toggle confirm password visibility">
+                  <svg id="eye2" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                    <path d="M1 12S5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="form-hint" id="confirm-hint" style="min-height:16px"></div>
             </div>
           </div>
 
-          <div class="form-check" style="margin-bottom:16px">
-            <input type="checkbox" id="agree" required>
-            <label class="form-check-label" for="agree">
-              I agree to the Terms & Conditions and confirm that all information provided is accurate.
+          <!-- Terms -->
+          <div class="terms-check-card" id="terms-card" onclick="toggleTerms()">
+            <input type="checkbox" id="agree" required onclick="event.stopPropagation();toggleTerms()">
+            <label class="terms-check-label" for="agree">
+              I agree to the
+              <a href="/terms.html" style="color:var(--navy-600);font-weight:600" onclick="event.stopPropagation()">Terms of Service</a>
+              and
+              <a href="/privacy.html" style="color:var(--navy-600);font-weight:600" onclick="event.stopPropagation()">Privacy Policy</a>.
+              I confirm all information provided is accurate.
             </label>
           </div>
 
           <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-register">
-            Create Candidate Account
+            Create My Account →
           </button>
         </form>
+
+        <p style="text-align:center;font-size:.75rem;color:var(--text-light);margin-top:16px">
+          Already registered? <a href="/login.html" style="color:var(--navy-600);font-weight:600">Sign in here →</a>
+        </p>
       </div>
     </div>
   </div>
 
   <script src="/js/app.js"></script>
   <script>
-    (function() {
+    // Redirect if already logged in
+    (function () {
       const user = getUser();
       if (user) window.location.href = user.role === 'admin' ? '/admin/dashboard.html' : '/student/dashboard.html';
     })();
 
-    document.getElementById('reg-form').addEventListener('submit', async function(e) {
+    // Password toggle helper
+    function togglePw(fieldId, iconId) {
+      const pw  = document.getElementById(fieldId);
+      const ico = document.getElementById(iconId);
+      const hiding = pw.type === 'text';
+      pw.type = hiding ? 'password' : 'text';
+      ico.innerHTML = hiding
+        ? '<path d="M1 12S5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>'
+        : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+    }
+
+    // Password strength
+    function checkPwStrength(val) {
+      const fill = document.getElementById('pw-fill');
+      const text = document.getElementById('pw-text');
+      if (!val) { fill.style.width = '0%'; text.textContent = ''; return; }
+      let score = 0;
+      if (val.length >= 8)  score++;
+      if (val.length >= 12) score++;
+      if (/[A-Z]/.test(val)) score++;
+      if (/[0-9]/.test(val)) score++;
+      if (/[^A-Za-z0-9]/.test(val)) score++;
+      const levels = [
+        { w:'20%', bg:'var(--danger)',  label:'Too weak',    color:'var(--danger)'  },
+        { w:'40%', bg:'#f97316',        label:'Weak',        color:'#f97316'        },
+        { w:'60%', bg:'var(--warning)', label:'Fair',        color:'var(--warning)' },
+        { w:'80%', bg:'#84cc16',        label:'Good',        color:'#84cc16'        },
+        { w:'100%',bg:'var(--success)', label:'Strong ✓',   color:'var(--success)' },
+      ];
+      const l = levels[Math.min(score, 4)];
+      fill.style.width = l.w;
+      fill.style.background = l.bg;
+      text.textContent = l.label;
+      text.style.color = l.color;
+      updateSteps();
+    }
+
+    // Confirm password match
+    function checkConfirm() {
+      const pw   = document.getElementById('password').value;
+      const conf = document.getElementById('confirm-pass').value;
+      const hint = document.getElementById('confirm-hint');
+      if (!conf) { hint.textContent = ''; return; }
+      if (pw === conf) {
+        hint.textContent = '✓ Passwords match';
+        hint.style.color = 'var(--success)';
+      } else {
+        hint.textContent = '✗ Passwords do not match';
+        hint.style.color = 'var(--danger)';
+      }
+    }
+
+    // Terms card toggle
+    function toggleTerms() {
+      const cb   = document.getElementById('agree');
+      const card = document.getElementById('terms-card');
+      cb.checked = !cb.checked;
+      card.classList.toggle('checked', cb.checked);
+    }
+    // keep card in sync when checkbox is clicked directly
+    document.getElementById('agree').addEventListener('change', function () {
+      document.getElementById('terms-card').classList.toggle('checked', this.checked);
+    });
+
+    // Step indicator update
+    function updateSteps() {
+      const name  = document.getElementById('name').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const pw    = document.getElementById('password').value;
+
+      const s1 = document.getElementById('step-1');
+      const s2 = document.getElementById('step-2');
+      const s3 = document.getElementById('step-3');
+      const l1 = document.getElementById('line-1');
+      const l2 = document.getElementById('line-2');
+
+      const identityDone = name.length > 0;
+      const contactDone  = /\S+@\S+\.\S+/.test(email);
+      const secDone      = pw.length >= 8;
+
+      s1.className = 'form-step ' + (identityDone ? 'done' : 'active');
+      s1.querySelector('.form-step-dot').textContent = identityDone ? '✓' : '1';
+      l1.className = 'form-step-line ' + (identityDone ? 'done' : '');
+
+      s2.className = 'form-step ' + (contactDone ? 'done' : identityDone ? 'active' : '');
+      s2.querySelector('.form-step-dot').textContent = contactDone ? '✓' : '2';
+      l2.className = 'form-step-line ' + (contactDone ? 'done' : '');
+
+      s3.className = 'form-step ' + (secDone ? 'done' : contactDone ? 'active' : '');
+      s3.querySelector('.form-step-dot').textContent = secDone ? '✓' : '3';
+    }
+
+    // Live step updates
+    ['name','email','password'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', updateSteps);
+    });
+
+    // Submit
+    document.getElementById('reg-form').addEventListener('submit', async function (e) {
       e.preventDefault();
-      const btn = document.getElementById('btn-register');
+      const btn     = document.getElementById('btn-register');
       const alertEl = document.getElementById('reg-alert');
       alertEl.style.display = 'none';
 
@@ -113,13 +466,22 @@
       const confirm  = document.getElementById('confirm-pass').value;
       if (password !== confirm) {
         alertEl.className = 'alert alert-danger';
-        alertEl.innerHTML = '⚠ Passwords do not match.';
+        alertEl.innerHTML = '⚠&nbsp;Passwords do not match.';
+        alertEl.style.display = 'flex';
+        document.getElementById('confirm-pass').focus();
+        return;
+      }
+
+      const agreed = document.getElementById('agree').checked;
+      if (!agreed) {
+        alertEl.className = 'alert alert-warning';
+        alertEl.innerHTML = '⚠&nbsp;Please accept the Terms of Service to continue.';
         alertEl.style.display = 'flex';
         return;
       }
 
       btn.disabled = true;
-      btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block"></span>&nbsp; Creating account...';
+      btn.innerHTML = '<span class="spinner" style="width:15px;height:15px;border-width:2px;display:inline-block;vertical-align:middle"></span>&ensp;Creating account…';
 
       try {
         const data = await apiFetch('/auth/register', {
@@ -128,22 +490,26 @@
             name:        document.getElementById('name').value.trim(),
             email:       document.getElementById('email').value.trim(),
             password,
-            roll_number: document.getElementById('roll').value.trim() || null,
-            phone:       document.getElementById('phone').value.trim() || null,
-            dob:         document.getElementById('dob').value || null,
-            gender:      document.getElementById('gender').value || null
+            roll_number: document.getElementById('roll').value.trim()   || null,
+            phone:       document.getElementById('phone').value.trim()   || null,
+            dob:         document.getElementById('dob').value            || null,
+            gender:      document.getElementById('gender').value         || null
           }
         });
         setAuth(data.token, data.user);
-        window.location.href = '/student/dashboard.html';
+        btn.innerHTML = '✓ Account created!';
+        btn.style.background = 'linear-gradient(135deg, var(--success), #059669)';
+        showToast('Welcome to ExamHub! 🎉', 'success');
+        setTimeout(() => { window.location.href = '/student/dashboard.html'; }, 700);
       } catch (err) {
         alertEl.className = 'alert alert-danger';
-        alertEl.innerHTML = '⚠ ' + esc(err.message);
+        alertEl.innerHTML = '⚠&nbsp;' + esc(err.message);
         alertEl.style.display = 'flex';
         btn.disabled = false;
-        btn.textContent = 'Create Candidate Account';
+        btn.innerHTML = 'Create My Account →';
       }
     });
+
     function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
   </script>
 </body>
