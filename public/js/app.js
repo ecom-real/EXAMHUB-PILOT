@@ -101,7 +101,8 @@ function buildNavbar(active) {
         { href: '/admin/questions.html', label: 'Questions' },
         { href: '/admin/schedule.html', label: 'Schedule' },
         { href: '/admin/students.html', label: 'Students' },
-        { href: '/admin/results.html', label: 'Results' }
+        { href: '/admin/results.html', label: 'Results' },
+        { href: '/admin/payments.html', label: 'Payments' }
       ]
     : [
         { href: '/student/dashboard.html', label: 'My Exams' },

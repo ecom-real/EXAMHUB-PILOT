@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">`n  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <title>Manage Exams — ExamHub Admin</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
@@ -66,6 +67,10 @@
           <div class="form-group">
             <label class="form-label">Total Marks</label>
             <input class="form-control" type="number" id="ef-marks" min="0" value="100">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Price (₹)</label>
+            <input class="form-control" type="number" id="ef-price" min="0" step="0.01" value="0" placeholder="0 = Free">
           </div>
           <div class="form-group col-span-2">
             <label class="form-label">Description</label>
@@ -164,7 +169,7 @@
         return;
       }
       el.innerHTML = `<div class="table-wrapper"><table>
-        <thead><tr><th>Title</th><th>Code</th><th>Duration</th><th>Sections</th><th>Pass %</th><th>Status</th><th>Certificate</th><th>Created</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Title</th><th>Code</th><th>Duration</th><th>Sections</th><th>Pass %</th><th>Price</th><th>Status</th><th>Certificate</th><th>Created</th><th>Actions</th></tr></thead>
         <tbody>
           ${exams.map(e => `<tr>
             <td>
@@ -175,6 +180,7 @@
             <td>${e.total_duration} min</td>
             <td>${e.exam_sections?.length||0}</td>
             <td>${e.pass_percentage}%</td>
+            <td>${parseFloat(e.price||0) > 0 ? `<span class="badge badge-blue">₹${parseFloat(e.price).toFixed(0)}</span>` : '<span class="badge badge-grey">Free</span>'}</td>
             <td>${e.is_published ? '<span class="badge badge-success">Published</span>' : '<span class="badge badge-grey">Draft</span>'}</td>
             <td>${e.enable_certificate !== false ? '<span class="badge badge-blue">🎓 On</span>' : '<span class="badge badge-grey">Off</span>'}</td>
             <td style="color:var(--text-muted);font-size:.8rem">${formatDate(e.created_at)}</td>
@@ -198,6 +204,7 @@
       document.getElementById('ef-duration').value = 60;
       document.getElementById('ef-pass').value = 40;
       document.getElementById('ef-marks').value = 100;
+      document.getElementById('ef-price').value = 0;
       document.getElementById('ef-show-result').checked = true;
       document.getElementById('ef-enable-cert').checked = true; // default ON
       document.getElementById('modal-exam-title').textContent = 'Create Exam';
@@ -213,6 +220,7 @@
       document.getElementById('ef-duration').value = e.total_duration;
       document.getElementById('ef-pass').value = e.pass_percentage;
       document.getElementById('ef-marks').value = e.total_marks;
+      document.getElementById('ef-price').value = parseFloat(e.price || 0);
       document.getElementById('ef-desc').value = e.description || '';
       document.getElementById('ef-instructions').value = e.instructions || '';
       document.getElementById('ef-published').value = String(e.is_published);
@@ -234,6 +242,7 @@
         total_duration: parseInt(document.getElementById('ef-duration').value),
         pass_percentage: parseInt(document.getElementById('ef-pass').value),
         total_marks: parseInt(document.getElementById('ef-marks').value),
+        price: parseFloat(document.getElementById('ef-price').value) || 0,
         description: document.getElementById('ef-desc').value.trim() || null,
         instructions: document.getElementById('ef-instructions').value.trim() || null,
         is_published: document.getElementById('ef-published').value === 'true',

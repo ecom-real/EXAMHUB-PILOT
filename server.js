@@ -1,4 +1,5 @@
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -151,15 +152,23 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
     const { data, error } = await supabaseAuthClient.auth.signInWithPassword({ email, password });
     if (error) return res.status(400).json({ error: 'Invalid email or password' });
 
     const { data: profile, error: profileErr } = await supabase.from('users').select('*').eq('id', data.user.id).single();
 
-    if (!profile?.is_active) return res.status(403).json({ error: 'Account is deactivated. Contact admin.' });
+    if (profileErr || !profile) {
+      console.error('Login profile fetch error:', profileErr?.message || 'Profile not found for user ' + data.user.id);
+      return res.status(500).json({ error: 'User profile not found. Please contact the administrator.' });
+    }
+
+    if (!profile.is_active) return res.status(403).json({ error: 'Account is deactivated. Contact admin.' });
 
     res.json({ token: data.session.access_token, user: profile });
   } catch (err) {
+    console.error('Login error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -277,7 +286,7 @@ const EXAM_ALLOWED_FIELDS = [
   'title', 'exam_code', 'description', 'instructions',
   'total_duration', 'total_marks', 'pass_percentage',
   'is_published', 'shuffle_questions', 'shuffle_options',
-  'show_result', 'enable_certificate'
+  'show_result', 'enable_certificate', 'price', 'exam_type'
 ];
 function pickExamFields(body) {
   return EXAM_ALLOWED_FIELDS.reduce((acc, k) => {
@@ -940,6 +949,731 @@ app.get('/api/users', authenticate, requireAdmin, async (req, res) => {
 
 
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// RAZORPAY PAYMENT ROUTES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Lazy-init Razorpay instance (only if keys present)
+function getRazorpay() {
+  const Razorpay = require('razorpay');
+  if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET ||
+      process.env.RAZORPAY_KEY_ID.includes('XXXX')) {
+    throw new Error('Razorpay API keys are not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env');
+  }
+  return new Razorpay({
+    key_id: process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET
+  });
+}
+
+// POST /api/payments/create-order
+// Creates a Razorpay order for a given exam. Student must be authenticated.
+app.post('/api/payments/create-order', authenticate, async (req, res) => {
+  try {
+    const { exam_id } = req.body;
+    if (!exam_id) return res.status(400).json({ error: 'exam_id is required' });
+
+    // Fetch exam to get price
+    const { data: exam, error: examErr } = await supabase.from('exams').select('id, title, price, is_published').eq('id', exam_id).single();
+    if (examErr || !exam) return res.status(404).json({ error: 'Exam not found' });
+    if (!exam.is_published) return res.status(403).json({ error: 'Exam is not available' });
+
+    const price = parseFloat(exam.price || 0);
+    if (price <= 0) return res.json({ free: true, message: 'This exam is free' });
+
+    // Check if student already has a successful payment for this exam
+    const { data: existingPayment } = await supabase
+      .from('payments')
+      .select('id, status')
+      .eq('student_id', req.user.id)
+      .eq('exam_id', exam_id)
+      .eq('status', 'paid')
+      .maybeSingle();
+
+    if (existingPayment) {
+      return res.json({ already_paid: true, message: 'You have already paid for this exam' });
+    }
+
+    // Create Razorpay order (amount in paise)
+    const instance = getRazorpay();
+    const order = await instance.orders.create({
+      amount: Math.round(price * 100),
+      currency: 'INR',
+      receipt: `exam_${exam_id}_user_${req.user.id}`.slice(0, 40),
+      notes: {
+        exam_id,
+        student_id: req.user.id,
+        student_name: req.user.name || ''
+      }
+    });
+
+    // Upsert payment record (replace existing 'created' record if retrying)
+    await supabase.from('payments').upsert({
+      student_id: req.user.id,
+      exam_id,
+      razorpay_order_id: order.id,
+      amount: price,
+      currency: 'INR',
+      status: 'created',
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'student_id,exam_id' });
+
+    res.json({
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      key_id: process.env.RAZORPAY_KEY_ID,
+      exam_title: exam.title,
+      student_name: req.user.name || '',
+      student_email: req.user.email || ''
+    });
+  } catch (err) {
+    console.error('Razorpay create-order error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/payments/verify
+// Verifies Razorpay payment signature and marks payment as paid.
+app.post('/api/payments/verify', authenticate, async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ error: 'Missing payment verification fields' });
+    }
+
+    // Verify HMAC signature
+    const secret = process.env.RAZORPAY_KEY_SECRET;
+    const expectedSig = crypto
+      .createHmac('sha256', secret)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest('hex');
+
+    if (expectedSig !== razorpay_signature) {
+      // Mark payment as failed
+      await supabase.from('payments')
+        .update({ status: 'failed', updated_at: new Date().toISOString() })
+        .eq('razorpay_order_id', razorpay_order_id);
+      return res.status(400).json({ error: 'Payment verification failed: invalid signature' });
+    }
+
+    // Mark payment as paid
+    const { data: payment, error: payErr } = await supabase.from('payments')
+      .update({
+        razorpay_payment_id,
+        razorpay_signature,
+        status: 'paid',
+        updated_at: new Date().toISOString()
+      })
+      .eq('razorpay_order_id', razorpay_order_id)
+      .select()
+      .single();
+
+    if (payErr) throw payErr;
+    res.json({ success: true, payment_id: razorpay_payment_id, exam_id: payment?.exam_id });
+  } catch (err) {
+    console.error('Razorpay verify error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/payments/check/:examId
+// Returns payment and pricing status for the current student and given exam.
+app.get('/api/payments/check/:examId', authenticate, async (req, res) => {
+  try {
+    const { examId } = req.params;
+
+    const { data: exam } = await supabase.from('exams').select('price').eq('id', examId).single();
+    const price = parseFloat(exam?.price || 0);
+
+    if (price <= 0) return res.json({ free: true, paid: true, price: 0 });
+
+    const { data: payment } = await supabase
+      .from('payments')
+      .select('status')
+      .eq('student_id', req.user.id)
+      .eq('exam_id', examId)
+      .eq('status', 'paid')
+      .maybeSingle();
+
+    res.json({ free: false, paid: !!payment, price });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/payments
+// Admin: list all payments with student and exam info.
+app.get('/api/admin/payments', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('*, users(name, email, roll_number), exams(title, exam_code)')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CODING EXAMS ROUTES — Production
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Rate limiter for code execution (10 per minute)
+const codeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many code executions. Please wait a moment.' }
+});
+app.use('/api/coding/execute', codeLimiter);
+app.use('/api/coding/submit', codeLimiter);
+
+// Piston language map
+const PISTON_LANGS = {
+  'python':     { language: 'python',     version: '3.10.0' },
+  'javascript': { language: 'javascript', version: '18.15.0' },
+  'java':       { language: 'java',       version: '15.0.2' },
+  'cpp':        { language: 'c++',        version: '10.2.0' },
+  'c':          { language: 'c',          version: '10.2.0' }
+};
+
+const MAX_CODE_SIZE = 50 * 1024; // 50KB
+
+// Helper: execute code via Piston
+async function executeCode(code, language, stdin, timeLimitMs = 10000) {
+  const langInfo = PISTON_LANGS[language] || PISTON_LANGS['python'];
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.min(timeLimitMs + 5000, 30000));
+
+  try {
+    const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        language: langInfo.language,
+        version: langInfo.version,
+        files: [{ content: code }],
+        stdin: stdin || '',
+        run_timeout: timeLimitMs
+      })
+    });
+    const result = await response.json();
+    return {
+      stdout: result.run?.stdout || '',
+      stderr: result.run?.stderr || '',
+      compile_output: result.compile?.stderr || '',
+      exit_code: result.run?.code ?? -1,
+      signal: result.run?.signal || null
+    };
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      return { stdout: '', stderr: 'Execution timed out', compile_output: '', exit_code: -1, signal: 'SIGKILL' };
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Helper: normalize output for comparison (trim trailing whitespace per line, trailing newlines)
+function normalizeOutput(str) {
+  return (str || '').split('\n').map(l => l.trimEnd()).join('\n').replace(/\n+$/, '');
+}
+
+// ── ADMIN: List coding questions ──────────────────────────────────────────────
+app.get('/api/admin/coding-questions', authenticate, requireAdmin, async (req, res) => {
+  try {
+    let query = supabase.from('coding_questions').select('*, test_cases(id)');
+
+    if (req.query.difficulty) query = query.eq('difficulty', req.query.difficulty);
+    if (req.query.search) query = query.ilike('title', `%${req.query.search}%`);
+    if (req.query.active === 'true') query = query.eq('is_active', true);
+    if (req.query.active === 'false') query = query.eq('is_active', false);
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+
+    // Add test_case_count
+    const result = (data || []).map(q => ({
+      ...q,
+      test_case_count: q.test_cases?.length || 0,
+      test_cases: undefined
+    }));
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Get single coding question with test cases ─────────────────────────
+app.get('/api/admin/coding-questions/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('coding_questions')
+      .select('*, test_cases(*)')
+      .eq('id', req.params.id)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Question not found' });
+
+    // Sort test cases
+    if (data.test_cases) data.test_cases.sort((a, b) => a.sort_order - b.sort_order);
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Create coding question ─────────────────────────────────────────────
+app.post('/api/admin/coding-questions', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { test_cases: testCases, ...qData } = req.body;
+
+    // Whitelist fields
+    const allowed = ['title', 'description', 'constraints', 'difficulty', 'tags', 'examples',
+                     'hints', 'editorial', 'time_limit_ms', 'memory_limit_kb', 'skeleton_code', 'is_active'];
+    const cleanQ = allowed.reduce((acc, k) => { if (k in qData) acc[k] = qData[k]; return acc; }, {});
+    cleanQ.created_by = req.user.id;
+
+    const { data: question, error: qErr } = await supabase
+      .from('coding_questions').insert(cleanQ).select().single();
+    if (qErr) throw qErr;
+
+    // Insert test cases if provided
+    if (Array.isArray(testCases) && testCases.length > 0) {
+      const tcRows = testCases.map((tc, i) => ({
+        question_id: question.id,
+        label: tc.label || `Test Case ${i + 1}`,
+        input: tc.input || '',
+        expected_output: tc.expected_output || '',
+        explanation: tc.explanation || null,
+        is_hidden: tc.is_hidden !== undefined ? tc.is_hidden : (i >= 2), // first 2 visible by default
+        weight: tc.weight || 10,
+        sort_order: tc.sort_order || (i + 1)
+      }));
+      await supabase.from('test_cases').insert(tcRows);
+    }
+
+    // Return full question with test cases
+    const { data: full } = await supabase
+      .from('coding_questions').select('*, test_cases(*)').eq('id', question.id).single();
+    res.json(full);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Update coding question ─────────────────────────────────────────────
+app.put('/api/admin/coding-questions/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { test_cases: testCases, ...qData } = req.body;
+
+    const allowed = ['title', 'description', 'constraints', 'difficulty', 'tags', 'examples',
+                     'hints', 'editorial', 'time_limit_ms', 'memory_limit_kb', 'skeleton_code', 'is_active'];
+    const cleanQ = allowed.reduce((acc, k) => { if (k in qData) acc[k] = qData[k]; return acc; }, {});
+
+    const { data, error } = await supabase
+      .from('coding_questions').update(cleanQ).eq('id', req.params.id).select().single();
+    if (error) throw error;
+
+    // Replace test cases if provided
+    if (Array.isArray(testCases)) {
+      await supabase.from('test_cases').delete().eq('question_id', req.params.id);
+      if (testCases.length > 0) {
+        const tcRows = testCases.map((tc, i) => ({
+          question_id: req.params.id,
+          label: tc.label || `Test Case ${i + 1}`,
+          input: tc.input || '',
+          expected_output: tc.expected_output || '',
+          explanation: tc.explanation || null,
+          is_hidden: tc.is_hidden !== undefined ? tc.is_hidden : true,
+          weight: tc.weight || 10,
+          sort_order: tc.sort_order || (i + 1)
+        }));
+        await supabase.from('test_cases').insert(tcRows);
+      }
+    }
+
+    const { data: full } = await supabase
+      .from('coding_questions').select('*, test_cases(*)').eq('id', req.params.id).single();
+    res.json(full);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Delete coding question ─────────────────────────────────────────────
+app.delete('/api/admin/coding-questions/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from('coding_questions').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Add test case to a question ────────────────────────────────────────
+app.post('/api/admin/coding-questions/:id/test-cases', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { label, input, expected_output, explanation, is_hidden, weight, sort_order } = req.body;
+    const { data, error } = await supabase.from('test_cases').insert({
+      question_id: req.params.id,
+      label: label || 'Test Case',
+      input: input || '',
+      expected_output: expected_output || '',
+      explanation: explanation || null,
+      is_hidden: is_hidden !== undefined ? is_hidden : true,
+      weight: weight || 10,
+      sort_order: sort_order || 1
+    }).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Update test case ───────────────────────────────────────────────────
+app.put('/api/admin/test-cases/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const allowed = ['label', 'input', 'expected_output', 'explanation', 'is_hidden', 'weight', 'sort_order'];
+    const cleanTC = allowed.reduce((acc, k) => { if (k in req.body) acc[k] = req.body[k]; return acc; }, {});
+    const { data, error } = await supabase.from('test_cases').update(cleanTC).eq('id', req.params.id).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Delete test case ───────────────────────────────────────────────────
+app.delete('/api/admin/test-cases/:id', authenticate, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from('test_cases').delete().eq('id', req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── ADMIN: Get all coding submissions (optionally filtered) ───────────────────
+app.get('/api/admin/coding-submissions', authenticate, requireAdmin, async (req, res) => {
+  try {
+    let query = supabase.from('coding_submissions')
+      .select('*, coding_questions(title), users(name, email, roll_number)');
+    if (req.query.questionId) query = query.eq('question_id', req.query.questionId);
+    if (req.query.studentId) query = query.eq('student_id', req.query.studentId);
+    const { data, error } = await query.order('submitted_at', { ascending: false }).limit(200);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// STUDENT CODING ROUTES
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── STUDENT: List coding questions ────────────────────────────────────────────
+app.get('/api/coding-questions', authenticate, async (req, res) => {
+  try {
+    let query = supabase.from('coding_questions')
+      .select('id, title, difficulty, tags, time_limit_ms, memory_limit_kb, created_at')
+      .eq('is_active', true);
+
+    if (req.query.difficulty) query = query.eq('difficulty', req.query.difficulty);
+    if (req.query.search) query = query.ilike('title', `%${req.query.search}%`);
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+
+    // Attach best submission status per question for this student
+    const qIds = (data || []).map(q => q.id);
+    let bestSubmissions = {};
+    if (qIds.length > 0) {
+      const { data: subs } = await supabase
+        .from('coding_submissions')
+        .select('question_id, status, score, total_score')
+        .eq('student_id', req.user.id)
+        .in('question_id', qIds)
+        .order('score', { ascending: false });
+      for (const s of (subs || [])) {
+        if (!bestSubmissions[s.question_id] || s.score > bestSubmissions[s.question_id].score) {
+          bestSubmissions[s.question_id] = s;
+        }
+      }
+    }
+
+    const result = (data || []).map(q => ({
+      ...q,
+      best_submission: bestSubmissions[q.id] || null
+    }));
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── STUDENT: Get single coding question ───────────────────────────────────────
+app.get('/api/coding-questions/:id', authenticate, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('coding_questions')
+      .select('id, title, description, constraints, difficulty, tags, examples, hints, time_limit_ms, memory_limit_kb, skeleton_code')
+      .eq('id', req.params.id)
+      .eq('is_active', true)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Question not found' });
+
+    // Get visible test cases only
+    const { data: visibleTests } = await supabase
+      .from('test_cases')
+      .select('id, label, input, expected_output, explanation, sort_order')
+      .eq('question_id', req.params.id)
+      .eq('is_hidden', false)
+      .order('sort_order');
+
+    data.visible_test_cases = visibleTests || [];
+
+    // Get student's best submission for this question
+    const { data: bestSub } = await supabase
+      .from('coding_submissions')
+      .select('id, status, score, total_score, passed_tests, total_tests, language, submitted_at')
+      .eq('question_id', req.params.id)
+      .eq('student_id', req.user.id)
+      .order('score', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    data.best_submission = bestSub || null;
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── STUDENT: Run code (against custom/sample input) ───────────────────────────
+app.post('/api/coding/execute', authenticate, async (req, res) => {
+  try {
+    const { code, language, input, question_id } = req.body;
+
+    if (!code || !language) return res.status(400).json({ error: 'Code and language are required' });
+    if (Buffer.byteLength(code, 'utf8') > MAX_CODE_SIZE) {
+      return res.status(400).json({ error: `Code exceeds maximum size of ${MAX_CODE_SIZE / 1024}KB` });
+    }
+    if (!PISTON_LANGS[language]) {
+      return res.status(400).json({ error: `Unsupported language: ${language}. Supported: ${Object.keys(PISTON_LANGS).join(', ')}` });
+    }
+
+    // Get time limit from question if provided
+    let timeLimitMs = 10000;
+    if (question_id) {
+      const { data: q } = await supabase.from('coding_questions').select('time_limit_ms').eq('id', question_id).single();
+      if (q) timeLimitMs = q.time_limit_ms || 10000;
+    }
+
+    const result = await executeCode(code, language, input, timeLimitMs);
+
+    // Determine status
+    let status = 'Success';
+    if (result.compile_output) status = 'Compilation Error';
+    else if (result.signal === 'SIGKILL') status = 'Time Limit Exceeded';
+    else if (result.exit_code !== 0) status = 'Runtime Error';
+
+    res.json({
+      output: result.stdout,
+      error: result.stderr || result.compile_output,
+      status,
+      exit_code: result.exit_code
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Code execution failed', details: err.message });
+  }
+});
+
+// ── STUDENT: Submit code (run against all test cases, grade) ──────────────────
+app.post('/api/coding/submit', authenticate, async (req, res) => {
+  try {
+    const { code, language, question_id, exam_id } = req.body;
+
+    if (!code || !language || !question_id) {
+      return res.status(400).json({ error: 'code, language, and question_id are required' });
+    }
+    if (Buffer.byteLength(code, 'utf8') > MAX_CODE_SIZE) {
+      return res.status(400).json({ error: `Code exceeds maximum size of ${MAX_CODE_SIZE / 1024}KB` });
+    }
+    if (!PISTON_LANGS[language]) {
+      return res.status(400).json({ error: `Unsupported language: ${language}` });
+    }
+
+    // Get question + all test cases
+    const { data: question } = await supabase
+      .from('coding_questions').select('*').eq('id', question_id).single();
+    if (!question) return res.status(404).json({ error: 'Question not found' });
+
+    const { data: allTests } = await supabase
+      .from('test_cases')
+      .select('*')
+      .eq('question_id', question_id)
+      .order('sort_order');
+
+    if (!allTests || allTests.length === 0) {
+      return res.status(400).json({ error: 'No test cases configured for this question' });
+    }
+
+    const timeLimitMs = question.time_limit_ms || 2000;
+    const testResults = [];
+    let totalScore = 0;
+    let totalPossible = 0;
+    let passedTests = 0;
+    let worstTime = 0;
+    let overallStatus = 'Accepted';
+    let compileError = null;
+    let runtimeError = null;
+
+    // Run against each test case
+    for (const tc of allTests) {
+      totalPossible += tc.weight;
+      const startTime = Date.now();
+      const result = await executeCode(code, language, tc.input, timeLimitMs);
+      const execTime = Date.now() - startTime;
+
+      let tcStatus = 'Accepted';
+      let passed = false;
+
+      if (result.compile_output) {
+        tcStatus = 'Compilation Error';
+        compileError = result.compile_output;
+        overallStatus = 'Compilation Error';
+      } else if (result.signal === 'SIGKILL') {
+        tcStatus = 'Time Limit Exceeded';
+        if (overallStatus === 'Accepted') overallStatus = 'Time Limit Exceeded';
+      } else if (result.exit_code !== 0) {
+        tcStatus = 'Runtime Error';
+        runtimeError = result.stderr;
+        if (overallStatus === 'Accepted') overallStatus = 'Runtime Error';
+      } else {
+        // Compare output
+        const actual = normalizeOutput(result.stdout);
+        const expected = normalizeOutput(tc.expected_output);
+        if (actual === expected) {
+          passed = true;
+          passedTests++;
+          totalScore += tc.weight;
+        } else {
+          tcStatus = 'Wrong Answer';
+          if (overallStatus === 'Accepted') overallStatus = 'Wrong Answer';
+        }
+      }
+
+      if (execTime > worstTime) worstTime = execTime;
+
+      testResults.push({
+        test_id: tc.id,
+        label: tc.label,
+        is_hidden: tc.is_hidden,
+        passed,
+        time_ms: execTime,
+        status: tcStatus,
+        // Only show output/expected for visible tests
+        output: tc.is_hidden ? undefined : normalizeOutput(result.stdout),
+        expected: tc.is_hidden ? undefined : normalizeOutput(tc.expected_output)
+      });
+
+      // Stop on compilation error (all tests will fail)
+      if (tcStatus === 'Compilation Error') {
+        // Mark remaining tests as CE
+        for (let i = allTests.indexOf(tc) + 1; i < allTests.length; i++) {
+          totalPossible += allTests[i].weight;
+          testResults.push({
+            test_id: allTests[i].id,
+            label: allTests[i].label,
+            is_hidden: allTests[i].is_hidden,
+            passed: false,
+            time_ms: 0,
+            status: 'Compilation Error'
+          });
+        }
+        break;
+      }
+    }
+
+    // Determine final status
+    if (passedTests === allTests.length) overallStatus = 'Accepted';
+    else if (passedTests > 0 && overallStatus === 'Wrong Answer') overallStatus = 'Partial';
+
+    // Store submission
+    const { data: submission, error: subErr } = await supabase.from('coding_submissions').insert({
+      question_id,
+      student_id: req.user.id,
+      exam_id: exam_id || null,
+      language,
+      code,
+      status: overallStatus,
+      score: totalScore,
+      total_score: totalPossible,
+      passed_tests: passedTests,
+      total_tests: allTests.length,
+      execution_time_ms: worstTime,
+      test_results: testResults,
+      compile_error: compileError,
+      runtime_error: runtimeError
+    }).select().single();
+
+    if (subErr) throw subErr;
+
+    res.json(submission);
+  } catch (err) {
+    res.status(500).json({ error: 'Submission failed', details: err.message });
+  }
+});
+
+// ── STUDENT: Get my submissions ───────────────────────────────────────────────
+app.get('/api/coding/submissions', authenticate, async (req, res) => {
+  try {
+    let query = supabase.from('coding_submissions')
+      .select('id, question_id, language, status, score, total_score, passed_tests, total_tests, execution_time_ms, submitted_at, coding_questions(title)')
+      .eq('student_id', req.user.id);
+
+    if (req.query.questionId) query = query.eq('question_id', req.query.questionId);
+
+    const { data, error } = await query.order('submitted_at', { ascending: false }).limit(50);
+    if (error) throw error;
+    res.json(data || []);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── STUDENT: Get single submission detail ─────────────────────────────────────
+app.get('/api/coding/submissions/:id', authenticate, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('coding_submissions')
+      .select('*, coding_questions(title, difficulty)')
+      .eq('id', req.params.id)
+      .single();
+    if (error || !data) return res.status(404).json({ error: 'Submission not found' });
+    if (data.student_id !== req.user.id && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── 404 Catch-All ──────────────────────────────────────────────────────────────
 // Serve a custom 404 page for any unmatched routes
 app.use((req, res) => {
@@ -951,7 +1685,7 @@ app.use((req, res) => {
 });
 
 // ── Start Server ───────────────────────────────────────────────────────────────
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+if (!process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`\n🚀 ExamHub v2 running at http://localhost:${PORT}`);
     console.log(`   Supabase: ${supabaseUrl}`);

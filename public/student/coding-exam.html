@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <title>Coding Challenge | ExamHub</title>
+  <meta name="description" content="Solve algorithmic coding challenges with a built-in code editor, run tests, and submit solutions.">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0e1a;
+      --bg-panel: #111827;
+      --bg-editor: #1a1f2e;
+      --bg-card: #1e2536;
+      --bg-hover: #252d3f;
+      --bg-input: #0d1117;
+      --border: #2d3548;
+      --border-active: #4f46e5;
+      --text-main: #e2e8f0;
+      --text-dim: #8892a8;
+      --text-muted: #64748b;
+      --accent: #6366f1;
+      --accent-glow: rgba(99,102,241,0.15);
+      --accent-hover: #818cf8;
+      --success: #10b981;
+      --success-bg: rgba(16,185,129,0.1);
+      --error: #ef4444;
+      --error-bg: rgba(239,68,68,0.1);
+      --warning: #f59e0b;
+      --warning-bg: rgba(245,158,11,0.1);
+      --info: #3b82f6;
+      --partial: #8b5cf6;
+      --partial-bg: rgba(139,92,246,0.1);
+      --radius: 8px;
+      --radius-sm: 6px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.3);
+      --transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top Bar ───────────────────────────────────────────────── */
+    .ide-header {
+      background: linear-gradient(180deg, #151b2e 0%, var(--bg-panel) 100%);
+      height: 52px;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    .ide-brand {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 700; font-size: 0.95rem;
+      color: var(--text-main); letter-spacing: -0.02em;
+    }
+    .ide-brand-icon {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+    }
+    .ide-nav {
+      display: flex; gap: 4px; margin-left: 24px;
+    }
+    .ide-nav-btn {
+      padding: 6px 14px; border-radius: var(--radius-sm);
+      background: transparent; border: none; color: var(--text-dim);
+      font-size: 0.8rem; font-weight: 500; cursor: pointer;
+      transition: var(--transition);
+    }
+    .ide-nav-btn:hover { background: var(--bg-hover); color: var(--text-main); }
+    .ide-nav-btn.active { background: var(--accent-glow); color: var(--accent-hover); }
+
+    .ide-header-right {
+      margin-left: auto;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .ide-timer {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--warning);
+      background: var(--warning-bg);
+      padding: 5px 14px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+    .ide-timer.danger { color: var(--error); background: var(--error-bg); }
+
+    .btn-back {
+      padding: 6px 14px; border-radius: var(--radius-sm);
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text-dim); font-size: 0.8rem; cursor: pointer;
+      transition: var(--transition); text-decoration: none;
+    }
+    .btn-back:hover { background: rgba(255,255,255,0.1); color: var(--text-main); }
+
+    /* ── Main Layout ───────────────────────────────────────────── */
+    .ide-main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Left Panel (Problem) ──────────────────────────────────── */
+    .problem-panel {
+      width: 42%;
+      min-width: 320px;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--bg-panel);
+    }
+    .problem-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+    .problem-tab {
+      padding: 12px 16px;
+      font-size: 0.82rem; font-weight: 500;
+      color: var(--text-muted); cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: var(--transition);
+    }
+    .problem-tab:hover { color: var(--text-main); }
+    .problem-tab.active {
+      color: var(--accent-hover);
+      border-bottom-color: var(--accent);
+    }
+
+    .problem-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+    .problem-content::-webkit-scrollbar { width: 6px; }
+    .problem-content::-webkit-scrollbar-track { background: transparent; }
+    .problem-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .problem-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .diff-tag {
+      font-size: 0.7rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .diff-easy { background: rgba(16,185,129,0.15); color: #34d399; }
+    .diff-medium { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .diff-hard { background: rgba(239,68,68,0.15); color: #f87171; }
+
+    .problem-tags {
+      display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 20px;
+    }
+    .ptag {
+      font-size: 0.7rem; padding: 3px 10px;
+      border-radius: 12px;
+      background: rgba(99,102,241,0.12);
+      color: var(--accent-hover);
+      font-weight: 500;
+    }
+
+    .problem-section { margin-bottom: 24px; }
+    .problem-section h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 10px;
+    }
+    .problem-desc {
+      font-size: 0.92rem;
+      line-height: 1.7;
+      color: var(--text-main);
+    }
+    .problem-desc code {
+      background: rgba(99,102,241,0.12);
+      color: var(--accent-hover);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85em;
+    }
+
+    .constraint-list {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      line-height: 1.8;
+      list-style: none;
+    }
+    .constraint-list li::before {
+      content: '•';
+      color: var(--accent);
+      font-weight: bold;
+      margin-right: 8px;
+    }
+
+    .example-block {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .example-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 8px;
+    }
+    .example-io {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .example-col label {
+      display: block;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .example-col pre {
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--text-main);
+      margin: 0;
+      white-space: pre-wrap;
+      position: relative;
+    }
+    .example-explanation {
+      margin-top: 10px;
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      font-style: italic;
+    }
+    .copy-btn {
+      position: absolute; top: 6px; right: 6px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--text-muted);
+      padding: 3px 8px; border-radius: 4px;
+      font-size: 0.7rem; cursor: pointer;
+      transition: var(--transition);
+    }
+    .copy-btn:hover { background: rgba(255,255,255,0.12); color: var(--text-main); }
+
+    .hints-container { margin-top: 12px; }
+    .hint-toggle {
+      background: rgba(245,158,11,0.1);
+      border: 1px solid rgba(245,158,11,0.2);
+      color: var(--warning);
+      padding: 8px 14px; border-radius: var(--radius-sm);
+      font-size: 0.82rem; cursor: pointer;
+      transition: var(--transition); width: 100%; text-align: left;
+    }
+    .hint-toggle:hover { background: rgba(245,158,11,0.15); }
+    .hint-text {
+      display: none;
+      margin-top: 8px; padding: 12px;
+      background: var(--warning-bg);
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem; color: var(--text-dim);
+    }
+    .hint-text.visible { display: block; }
+
+    /* ── Right Panel (Editor + Output) ─────────────────────────── */
+    .editor-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      background: var(--bg-editor);
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .editor-toolbar select {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .editor-toolbar select:hover { border-color: var(--accent); }
+    .editor-toolbar select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-glow); }
+
+    .toolbar-group {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .toolbar-btn {
+      padding: 6px 10px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      font-size: 0.78rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .toolbar-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-main); }
+
+    .toolbar-spacer { flex: 1; }
+
+    .btn-run, .btn-submit {
+      padding: 7px 18px;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-run {
+      background: rgba(255,255,255,0.08);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+    .btn-run:hover { background: rgba(255,255,255,0.12); }
+    .btn-run:disabled, .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-submit {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: white;
+    }
+    .btn-submit:hover { background: linear-gradient(135deg, #4338ca, #6d28d9); }
+
+    .editor-container {
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Resizable Divider ──────────────────────────────────────── */
+    .resize-handle {
+      height: 6px;
+      background: var(--bg-dark);
+      cursor: row-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .resize-handle::after {
+      content: '';
+      width: 40px; height: 3px;
+      background: var(--border);
+      border-radius: 3px;
+    }
+    .resize-handle:hover::after { background: var(--accent); }
+
+    /* ── Output Panel ──────────────────────────────────────────── */
+    .output-panel {
+      height: 240px;
+      background: var(--bg-dark);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .output-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      padding: 0 12px;
+      flex-shrink: 0;
+    }
+    .output-tab {
+      padding: 10px 16px;
+      font-size: 0.78rem; font-weight: 500;
+      color: var(--text-muted); cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: var(--transition);
+    }
+    .output-tab:hover { color: var(--text-main); }
+    .output-tab.active { color: var(--accent-hover); border-bottom-color: var(--accent); }
+
+    .output-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    .output-content::-webkit-scrollbar { width: 5px; }
+    .output-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .output-pane { display: none; height: 100%; }
+    .output-pane.active { display: flex; flex-direction: column; }
+
+    .custom-input-area {
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--text-main);
+      resize: vertical;
+      min-height: 60px;
+      margin-bottom: 10px;
+    }
+    .custom-input-area:focus { outline: none; border-color: var(--accent); }
+
+    .console-output {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      color: var(--text-main);
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+    .console-success { color: var(--success); }
+    .console-error { color: var(--error); }
+    .console-info { color: var(--info); }
+
+    /* ── Test Results Table ─────────────────────────────────────── */
+    .test-results-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    .test-results-table th {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      font-weight: 500;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .test-results-table td {
+      padding: 8px 12px;
+      border-bottom: 1px solid rgba(45,53,72,0.5);
+    }
+    .test-results-table tr:hover { background: rgba(255,255,255,0.02); }
+
+    .verdict-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 10px; border-radius: 12px;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .verdict-accepted { background: var(--success-bg); color: var(--success); }
+    .verdict-wa { background: var(--error-bg); color: var(--error); }
+    .verdict-tle { background: var(--warning-bg); color: var(--warning); }
+    .verdict-re { background: var(--error-bg); color: var(--error); }
+    .verdict-ce { background: var(--partial-bg); color: var(--partial); }
+    .verdict-partial { background: var(--partial-bg); color: var(--partial); }
+    .verdict-pending { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+
+    /* ── Submissions List ──────────────────────────────────────── */
+    .sub-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(45,53,72,0.5);
+      font-size: 0.82rem;
+    }
+    .sub-row:last-child { border-bottom: none; }
+
+    /* ── Loading Spinner ───────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Resizer (horizontal panel) ────────────────────────────── */
+    .h-resize-handle {
+      width: 6px;
+      cursor: col-resize;
+      background: var(--bg-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+    }
+    .h-resize-handle::after {
+      content: '';
+      width: 3px; height: 40px;
+      background: var(--border);
+      border-radius: 3px;
+    }
+    .h-resize-handle:hover::after { background: var(--accent); }
+
+    /* ── Score summary ─────────────────────────────────────────── */
+    .score-summary {
+      display: flex; gap: 20px; align-items: center;
+      padding: 14px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+    }
+    .score-big {
+      font-size: 1.8rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .score-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .score-stat {
+      text-align: center;
+    }
+
+    /* ── Question List (when no questionId) ─────────────────────── */
+    .q-list { padding: 24px; }
+    .q-list-item {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 10px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .q-list-item:hover { border-color: var(--accent); background: var(--bg-hover); }
+    .q-list-title { font-weight: 600; font-size: 0.95rem; }
+    .q-list-meta { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+    @media (max-width: 768px) {
+      .ide-main { flex-direction: column; }
+      .problem-panel { width: 100%; height: 40%; min-width: unset; border-right: none; border-bottom: 1px solid var(--border); }
+      .editor-panel { width: 100%; }
+      .ide-nav { display: none; }
+      .example-io { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- Header -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <header class="ide-header">
+    <div class="ide-brand">
+      <div class="ide-brand-icon">⟨/⟩</div>
+      <span>ExamHub Code</span>
+    </div>
+    <div class="ide-nav" id="question-nav"></div>
+    <div class="ide-header-right">
+      <div class="ide-timer" id="timer" style="display:none">00:00:00</div>
+      <a href="/student/dashboard.html" class="btn-back">← Dashboard</a>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- Main IDE Layout -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <div class="ide-main" id="ide-main">
+    <!-- Left: Problem Description -->
+    <div class="problem-panel" id="problem-panel">
+      <div class="problem-tabs">
+        <div class="problem-tab active" onclick="switchProblemTab('description')" data-tab="description">Description</div>
+        <div class="problem-tab" onclick="switchProblemTab('submissions')" data-tab="submissions">Submissions</div>
+      </div>
+
+      <!-- Description Tab -->
+      <div class="problem-content" id="tab-description">
+        <div id="problem-loading" style="text-align:center;padding:40px;color:var(--text-muted)">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto 16px"></div>
+          <p>Loading problem...</p>
+        </div>
+        <div id="problem-body" style="display:none">
+          <div class="problem-title">
+            <span id="p-title"></span>
+            <span class="diff-tag" id="p-diff"></span>
+          </div>
+          <div class="problem-tags" id="p-tags"></div>
+
+          <div class="problem-section">
+            <div class="problem-desc" id="p-desc"></div>
+          </div>
+
+          <div class="problem-section" id="p-constraints-section" style="display:none">
+            <h3>Constraints</h3>
+            <ul class="constraint-list" id="p-constraints"></ul>
+          </div>
+
+          <div class="problem-section" id="p-examples-section" style="display:none">
+            <h3>Examples</h3>
+            <div id="p-examples"></div>
+          </div>
+
+          <div class="problem-section" id="p-test-cases-section" style="display:none">
+            <h3>Sample Test Cases</h3>
+            <div id="p-test-cases"></div>
+          </div>
+
+          <div class="problem-section" id="p-hints-section" style="display:none">
+            <h3>Hints</h3>
+            <div class="hints-container" id="p-hints"></div>
+          </div>
+
+          <div class="problem-section" id="p-limits-section">
+            <h3>Limits</h3>
+            <div style="display:flex;gap:20px;font-size:0.85rem;color:var(--text-dim)">
+              <span>⏱ Time: <strong id="p-time-limit">2000ms</strong></span>
+              <span>💾 Memory: <strong id="p-mem-limit">256MB</strong></span>
+            </div>
+          </div>
+
+          <div id="p-best-submission" style="display:none;margin-top:20px">
+            <h3 style="font-size:0.85rem;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">Best Submission</h3>
+            <div id="p-best-content"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Submissions Tab -->
+      <div class="problem-content" id="tab-submissions" style="display:none">
+        <div id="submissions-list">
+          <p style="color:var(--text-muted);text-align:center;padding:24px">Loading submissions...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Horizontal Resize Handle -->
+    <div class="h-resize-handle" id="h-resize"></div>
+
+    <!-- Right: Editor + Output -->
+    <div class="editor-panel">
+      <!-- Toolbar -->
+      <div class="editor-toolbar">
+        <select id="lang-select" onchange="changeLanguage()">
+          <option value="python">Python 3</option>
+          <option value="javascript">JavaScript</option>
+          <option value="java">Java</option>
+          <option value="cpp">C++</option>
+          <option value="c">C</option>
+        </select>
+
+        <div class="toolbar-group">
+          <button class="toolbar-btn" onclick="changeFontSize(-1)" title="Decrease font size">A−</button>
+          <button class="toolbar-btn" onclick="changeFontSize(1)" title="Increase font size">A+</button>
+          <button class="toolbar-btn" onclick="resetCode()" title="Reset to skeleton code">↺ Reset</button>
+        </div>
+
+        <div class="toolbar-spacer"></div>
+
+        <button class="btn-run" id="btn-run" onclick="runCode()">
+          <span>▶</span> Run
+        </button>
+        <button class="btn-submit" id="btn-submit" onclick="submitCode()">
+          Submit
+        </button>
+      </div>
+
+      <!-- Monaco Editor -->
+      <div class="editor-container" id="editor-container"></div>
+
+      <!-- Resize Handle -->
+      <div class="resize-handle" id="v-resize"></div>
+
+      <!-- Output Panel -->
+      <div class="output-panel" id="output-panel">
+        <div class="output-tabs">
+          <div class="output-tab active" onclick="switchOutputTab('testcase')" data-tab="testcase">Test Case</div>
+          <div class="output-tab" onclick="switchOutputTab('result')" data-tab="result">Run Result</div>
+        </div>
+
+        <div class="output-content">
+          <!-- Custom Input Tab -->
+          <div class="output-pane active" id="pane-testcase">
+            <label style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;display:block">Custom Input (stdin)</label>
+            <textarea class="custom-input-area" id="custom-input" placeholder="Enter your test input here..."></textarea>
+          </div>
+
+          <!-- Result Tab -->
+          <div class="output-pane" id="pane-result">
+            <div id="run-result">
+              <p class="console-output console-info">Run your code to see output here.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <!-- Monaco Editor Loader -->
+  <!-- ═══════════════════════════════════════════════════════════════ -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs/loader.min.js"></script>
+  <script>
+    // ── State ──────────────────────────────────────────────────────
+    let editor = null;
+    let question = null;
+    let questionId = null;
+    let fontSize = 14;
+    let autoSaveTimer = null;
+
+    // ── Auth ──────────────────────────────────────────────────────
+    function getToken() { return localStorage.getItem('eh_token') || localStorage.getItem('token'); }
+    function getUser() { try { return JSON.parse(localStorage.getItem('eh_user')); } catch { return null; } }
+    const user = getUser();
+    const token = getToken();
+    if (!token || !user) { window.location.href = '/login.html'; }
+
+    async function apiFetch(path, options = {}) {
+      const res = await fetch('/api' + path, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+          ...(options.headers || {})
+        },
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined
+      });
+      if (res.status === 401) { window.location.href = '/login.html'; return {}; }
+      try { return await res.json(); } catch { return {}; }
+    }
+
+    // ── Initialize Monaco ─────────────────────────────────────────
+    require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.47.0/min/vs' } });
+    require(['vs/editor/editor.main'], function () {
+      // Custom dark theme
+      monaco.editor.defineTheme('examhub-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+          { token: 'comment', foreground: '6A737D', fontStyle: 'italic' },
+          { token: 'keyword', foreground: 'C678DD' },
+          { token: 'string', foreground: '98C379' },
+          { token: 'number', foreground: 'D19A66' },
+          { token: 'type', foreground: 'E5C07B' },
+        ],
+        colors: {
+          'editor.background': '#1a1f2e',
+          'editor.foreground': '#e2e8f0',
+          'editor.lineHighlightBackground': '#252d3f',
+          'editor.selectionBackground': '#3b426080',
+          'editorCursor.foreground': '#6366f1',
+          'editorLineNumber.foreground': '#4a5568',
+          'editorLineNumber.activeForeground': '#8892a8',
+        }
+      });
+
+      editor = monaco.editor.create(document.getElementById('editor-container'), {
+        value: '# Loading...',
+        language: 'python',
+        theme: 'examhub-dark',
+        automaticLayout: true,
+        fontSize: fontSize,
+        fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+        fontLigatures: true,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        padding: { top: 12 },
+        lineNumbers: 'on',
+        renderLineHighlight: 'all',
+        smoothScrolling: true,
+        cursorBlinking: 'smooth',
+        cursorSmoothCaretAnimation: 'on',
+        bracketPairColorization: { enabled: true },
+        tabSize: 4,
+      });
+
+      // Auto-save
+      editor.onDidChangeModelContent(() => {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => {
+          const lang = document.getElementById('lang-select').value;
+          localStorage.setItem(`code_${questionId}_${lang}`, editor.getValue());
+        }, 1000);
+      });
+
+      // Keyboard shortcuts
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runCode());
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter, () => submitCode());
+
+      // Load question after editor is ready
+      initPage();
+    });
+
+    // ── Page Init ─────────────────────────────────────────────────
+    async function initPage() {
+      const params = new URLSearchParams(window.location.search);
+      questionId = params.get('questionId') || params.get('id');
+
+      if (!questionId) {
+        // Show question list
+        await loadQuestionList();
+        return;
+      }
+
+      await loadQuestion(questionId);
+    }
+
+    // ── Load Question List ────────────────────────────────────────
+    async function loadQuestionList() {
+      document.getElementById('problem-loading').style.display = 'none';
+      document.getElementById('problem-body').style.display = 'none';
+
+      try {
+        const data = await apiFetch('/coding-questions');
+        if (data.error) throw new Error(data.error);
+
+        const container = document.getElementById('tab-description');
+        container.innerHTML = `
+          <div class="q-list">
+            <h2 style="margin-bottom:16px;font-size:1.2rem">Coding Challenges</h2>
+            ${data.length === 0 ? '<p style="color:var(--text-muted)">No coding questions available yet.</p>' :
+              data.map(q => {
+                const diffClass = q.difficulty === 'easy' ? 'diff-easy' : q.difficulty === 'hard' ? 'diff-hard' : 'diff-medium';
+                const bestStatus = q.best_submission ? q.best_submission.status : null;
+                const statusIcon = bestStatus === 'Accepted' ? '✅' : bestStatus ? '🔄' : '';
+                return `
+                  <div class="q-list-item" onclick="window.location.href='?questionId=${q.id}'">
+                    <div style="flex:1">
+                      <div class="q-list-title">${statusIcon} ${escapeHtml(q.title)}</div>
+                      <div class="q-list-meta">
+                        <span class="diff-tag ${diffClass}">${q.difficulty}</span>
+                        ${(q.tags || []).map(t => `<span class="ptag">${escapeHtml(t)}</span>`).join('')}
+                      </div>
+                    </div>
+                    ${q.best_submission ? `<span class="verdict-badge ${getVerdictClass(q.best_submission.status)}">${q.best_submission.status}</span>` : ''}
+                  </div>`;
+              }).join('')}
+          </div>`;
+
+        editor.setValue('// Select a problem from the list to start coding');
+      } catch (err) {
+        document.getElementById('tab-description').innerHTML = `<p style="color:var(--error);padding:24px">Error: ${err.message}</p>`;
+      }
+    }
+
+    // ── Load Single Question ──────────────────────────────────────
+    async function loadQuestion(id) {
+      try {
+        const data = await apiFetch(`/coding-questions/${id}`);
+        if (data.error) throw new Error(data.error);
+
+        question = data;
+        document.title = `${data.title} — ExamHub Code`;
+
+        // Problem header
+        document.getElementById('p-title').textContent = data.title;
+        const diffEl = document.getElementById('p-diff');
+        diffEl.textContent = data.difficulty;
+        diffEl.className = `diff-tag diff-${data.difficulty}`;
+
+        // Tags
+        const tagsEl = document.getElementById('p-tags');
+        tagsEl.innerHTML = (data.tags || []).map(t => `<span class="ptag">${escapeHtml(t)}</span>`).join('');
+
+        // Description
+        document.getElementById('p-desc').innerHTML = renderMarkdown(data.description || '');
+
+        // Constraints
+        if (data.constraints) {
+          document.getElementById('p-constraints-section').style.display = '';
+          const lines = data.constraints.split('\n').filter(l => l.trim());
+          document.getElementById('p-constraints').innerHTML = lines.map(l =>
+            `<li>${escapeHtml(l.replace(/^[-•*]\s*/, ''))}</li>`
+          ).join('');
+        }
+
+        // Examples
+        if (data.examples && data.examples.length > 0) {
+          document.getElementById('p-examples-section').style.display = '';
+          document.getElementById('p-examples').innerHTML = data.examples.map((ex, i) => `
+            <div class="example-block">
+              <div class="example-label">Example ${i + 1}</div>
+              <div class="example-io">
+                <div class="example-col">
+                  <label>Input</label>
+                  <pre>${escapeHtml(ex.input || '')}<button class="copy-btn" onclick="copyText(this, '${escapeAttr(ex.input || '')}')">Copy</button></pre>
+                </div>
+                <div class="example-col">
+                  <label>Output</label>
+                  <pre>${escapeHtml(ex.output || '')}<button class="copy-btn" onclick="copyText(this, '${escapeAttr(ex.output || '')}')">Copy</button></pre>
+                </div>
+              </div>
+              ${ex.explanation ? `<div class="example-explanation">💡 ${escapeHtml(ex.explanation)}</div>` : ''}
+            </div>
+          `).join('');
+        }
+
+        // Visible test cases
+        if (data.visible_test_cases && data.visible_test_cases.length > 0) {
+          document.getElementById('p-test-cases-section').style.display = '';
+          document.getElementById('p-test-cases').innerHTML = data.visible_test_cases.map((tc, i) => `
+            <div class="example-block">
+              <div class="example-label">${escapeHtml(tc.label || `Sample ${i + 1}`)}</div>
+              <div class="example-io">
+                <div class="example-col">
+                  <label>Input</label>
+                  <pre>${escapeHtml(tc.input)}<button class="copy-btn" onclick="copyText(this, '${escapeAttr(tc.input)}')">Copy</button></pre>
+                </div>
+                <div class="example-col">
+                  <label>Expected Output</label>
+                  <pre>${escapeHtml(tc.expected_output)}<button class="copy-btn" onclick="copyText(this, '${escapeAttr(tc.expected_output)}')">Copy</button></pre>
+                </div>
+              </div>
+              ${tc.explanation ? `<div class="example-explanation">💡 ${escapeHtml(tc.explanation)}</div>` : ''}
+            </div>
+          `).join('');
+
+          // Pre-fill custom input with first test case
+          document.getElementById('custom-input').value = data.visible_test_cases[0].input || '';
+        }
+
+        // Hints
+        if (data.hints && data.hints.length > 0) {
+          document.getElementById('p-hints-section').style.display = '';
+          document.getElementById('p-hints').innerHTML = data.hints.map((h, i) => `
+            <div style="margin-bottom:8px">
+              <button class="hint-toggle" onclick="this.nextElementSibling.classList.toggle('visible')">
+                💡 Hint ${i + 1}
+              </button>
+              <div class="hint-text">${escapeHtml(h)}</div>
+            </div>
+          `).join('');
+        }
+
+        // Limits
+        document.getElementById('p-time-limit').textContent = (data.time_limit_ms || 2000) + 'ms';
+        document.getElementById('p-mem-limit').textContent = Math.round((data.memory_limit_kb || 256000) / 1024) + 'MB';
+
+        // Best submission
+        if (data.best_submission) {
+          document.getElementById('p-best-submission').style.display = '';
+          const bs = data.best_submission;
+          document.getElementById('p-best-content').innerHTML = `
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius)">
+              <span class="verdict-badge ${getVerdictClass(bs.status)}">${bs.status}</span>
+              <span style="font-size:0.82rem;color:var(--text-dim)">${bs.passed_tests}/${bs.total_tests} tests passed</span>
+              <span style="font-size:0.82rem;color:var(--text-dim)">· ${bs.language}</span>
+            </div>
+          `;
+        }
+
+        // Set editor language and skeleton code
+        const lang = document.getElementById('lang-select').value;
+        setEditorCode(lang);
+
+        // Show content
+        document.getElementById('problem-loading').style.display = 'none';
+        document.getElementById('problem-body').style.display = '';
+
+      } catch (err) {
+        document.getElementById('problem-loading').innerHTML = `<p style="color:var(--error)">Error: ${err.message}</p>`;
+      }
+    }
+
+    // ── Editor Code Management ────────────────────────────────────
+    function setEditorCode(lang) {
+      // Try saved code first
+      const saved = localStorage.getItem(`code_${questionId}_${lang}`);
+      if (saved) {
+        editor.setValue(saved);
+      } else if (question?.skeleton_code?.[lang]) {
+        editor.setValue(question.skeleton_code[lang]);
+      } else {
+        const defaults = {
+          python: '# Write your solution here\n\n',
+          javascript: '// Write your solution here\n\n',
+          java: 'import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Your code here\n    }\n}\n',
+          cpp: '#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Your code here\n    return 0;\n}\n',
+          c: '#include <stdio.h>\n\nint main() {\n    // Your code here\n    return 0;\n}\n'
+        };
+        editor.setValue(defaults[lang] || '');
+      }
+
+      // Set Monaco language
+      const langMap = { python: 'python', javascript: 'javascript', java: 'java', cpp: 'cpp', c: 'c' };
+      monaco.editor.setModelLanguage(editor.getModel(), langMap[lang] || lang);
+    }
+
+    function changeLanguage() {
+      const lang = document.getElementById('lang-select').value;
+      setEditorCode(lang);
+    }
+
+    function resetCode() {
+      if (!confirm('Reset code to skeleton? Your changes will be lost.')) return;
+      const lang = document.getElementById('lang-select').value;
+      localStorage.removeItem(`code_${questionId}_${lang}`);
+      if (question?.skeleton_code?.[lang]) {
+        editor.setValue(question.skeleton_code[lang]);
+      } else {
+        changeLanguage();
+      }
+    }
+
+    function changeFontSize(delta) {
+      fontSize = Math.max(10, Math.min(24, fontSize + delta));
+      editor.updateOptions({ fontSize });
+    }
+
+    // ── Run Code ──────────────────────────────────────────────────
+    async function runCode() {
+      const btn = document.getElementById('btn-run');
+      const resultDiv = document.getElementById('run-result');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Running...';
+      switchOutputTab('result');
+      resultDiv.innerHTML = '<p class="console-output console-info">⏳ Executing code...</p>';
+
+      try {
+        const code = editor.getValue();
+        const language = document.getElementById('lang-select').value;
+        const input = document.getElementById('custom-input').value;
+
+        const data = await apiFetch('/coding/execute', {
+          method: 'POST',
+          body: { code, language, input, question_id: questionId }
+        });
+
+        if (data.error && !data.output && data.status !== 'Success') {
+          resultDiv.innerHTML = `
+            <div class="console-output console-error">❌ ${data.status || 'Error'}</div>
+            <pre class="console-output console-error" style="margin-top:8px">${escapeHtml(data.error || data.details || 'Unknown error')}</pre>
+          `;
+        } else {
+          const statusClass = data.status === 'Success' ? 'console-success' : 'console-error';
+          const statusIcon = data.status === 'Success' ? '✅' : '❌';
+          resultDiv.innerHTML = `
+            <div class="console-output ${statusClass}" style="margin-bottom:8px">${statusIcon} ${data.status}</div>
+            ${data.output ? `<div style="margin-bottom:8px"><span style="font-size:0.75rem;color:var(--text-muted)">OUTPUT</span><pre class="console-output" style="margin-top:4px">${escapeHtml(data.output)}</pre></div>` : ''}
+            ${data.error ? `<div><span style="font-size:0.75rem;color:var(--text-muted)">STDERR</span><pre class="console-output console-error" style="margin-top:4px">${escapeHtml(data.error)}</pre></div>` : ''}
+          `;
+        }
+      } catch (err) {
+        resultDiv.innerHTML = `<pre class="console-output console-error">Network error: ${err.message}</pre>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>▶</span> Run';
+      }
+    }
+
+    // ── Submit Code ───────────────────────────────────────────────
+    async function submitCode() {
+      if (!questionId) { alert('Select a question first'); return; }
+
+      const btn = document.getElementById('btn-submit');
+      const resultDiv = document.getElementById('run-result');
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Judging...';
+      switchOutputTab('result');
+      resultDiv.innerHTML = '<p class="console-output console-info">⏳ Running against all test cases...</p>';
+
+      try {
+        const code = editor.getValue();
+        const language = document.getElementById('lang-select').value;
+
+        const data = await apiFetch('/coding/submit', {
+          method: 'POST',
+          body: { code, language, question_id: questionId }
+        });
+
+        if (data.error && !data.test_results) {
+          resultDiv.innerHTML = `<pre class="console-output console-error">❌ ${data.error}</pre>`;
+          return;
+        }
+
+        // Render score summary + test results
+        const verdictClass = getVerdictClass(data.status);
+        const scorePercent = data.total_score > 0 ? Math.round((data.score / data.total_score) * 100) : 0;
+
+        let html = `
+          <div class="score-summary">
+            <div class="score-stat">
+              <div class="score-big" style="color:${data.status === 'Accepted' ? 'var(--success)' : data.score > 0 ? 'var(--warning)' : 'var(--error)'}">${scorePercent}%</div>
+              <div class="score-label">Score</div>
+            </div>
+            <div class="score-stat">
+              <div style="font-size:1.2rem;font-weight:600">${data.passed_tests}/${data.total_tests}</div>
+              <div class="score-label">Tests Passed</div>
+            </div>
+            <div class="score-stat">
+              <span class="verdict-badge ${verdictClass}" style="font-size:0.85rem;padding:5px 14px">${data.status}</span>
+            </div>
+            <div class="score-stat">
+              <div style="font-size:0.95rem;font-weight:500">${data.execution_time_ms || 0}ms</div>
+              <div class="score-label">Runtime</div>
+            </div>
+          </div>
+        `;
+
+        // Compile error message
+        if (data.compile_error) {
+          html += `<div style="margin-bottom:12px"><span style="font-size:0.75rem;color:var(--error)">COMPILATION ERROR</span><pre class="console-output console-error" style="margin-top:4px;padding:12px;background:var(--bg-card);border-radius:var(--radius-sm)">${escapeHtml(data.compile_error)}</pre></div>`;
+        }
+        if (data.runtime_error) {
+          html += `<div style="margin-bottom:12px"><span style="font-size:0.75rem;color:var(--error)">RUNTIME ERROR</span><pre class="console-output console-error" style="margin-top:4px;padding:12px;background:var(--bg-card);border-radius:var(--radius-sm)">${escapeHtml(data.runtime_error)}</pre></div>`;
+        }
+
+        // Test results table
+        if (data.test_results && data.test_results.length > 0) {
+          html += `
+            <table class="test-results-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Label</th>
+                  <th>Verdict</th>
+                  <th>Time</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${data.test_results.map((tr, i) => `
+                  <tr>
+                    <td style="color:var(--text-muted)">${i + 1}</td>
+                    <td>${escapeHtml(tr.label || `Test ${i + 1}`)}${tr.is_hidden ? ' <span style="font-size:0.7rem;color:var(--text-muted)">(hidden)</span>' : ''}</td>
+                    <td><span class="verdict-badge ${getVerdictClass(tr.status)}">${tr.passed ? '✓' : '✗'} ${tr.status}</span></td>
+                    <td style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--text-dim)">${tr.time_ms || 0}ms</td>
+                    <td>
+                      ${!tr.is_hidden && tr.output !== undefined && !tr.passed ? `
+                        <details style="font-size:0.78rem">
+                          <summary style="cursor:pointer;color:var(--info)">View diff</summary>
+                          <div style="margin-top:6px">
+                            <div style="color:var(--text-muted);font-size:0.72rem">Expected:</div>
+                            <pre style="background:var(--bg-card);padding:6px 8px;border-radius:4px;font-size:0.78rem;margin:2px 0 6px">${escapeHtml(tr.expected || '')}</pre>
+                            <div style="color:var(--text-muted);font-size:0.72rem">Your Output:</div>
+                            <pre style="background:var(--bg-card);padding:6px 8px;border-radius:4px;font-size:0.78rem;margin:2px 0">${escapeHtml(tr.output || '')}</pre>
+                          </div>
+                        </details>
+                      ` : ''}
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }
+
+        resultDiv.innerHTML = html;
+
+        // Refresh submissions tab
+        loadSubmissions();
+
+      } catch (err) {
+        resultDiv.innerHTML = `<pre class="console-output console-error">Error: ${err.message}</pre>`;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Submit';
+      }
+    }
+
+    // ── Load Submissions ──────────────────────────────────────────
+    async function loadSubmissions() {
+      const container = document.getElementById('submissions-list');
+      if (!questionId) {
+        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px">Select a question to see submissions.</p>';
+        return;
+      }
+
+      try {
+        const data = await apiFetch(`/coding/submissions?questionId=${questionId}`);
+        if (data.error) throw new Error(data.error);
+
+        if (!data.length) {
+          container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px">No submissions yet. Submit your solution to see results here.</p>';
+          return;
+        }
+
+        container.innerHTML = data.map((s, i) => `
+          <div class="sub-row">
+            <span style="color:var(--text-muted);min-width:24px">#${data.length - i}</span>
+            <span class="verdict-badge ${getVerdictClass(s.status)}">${s.status}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.8rem;color:var(--text-dim)">${s.passed_tests}/${s.total_tests}</span>
+            <span style="font-size:0.8rem;color:var(--text-dim)">${s.language}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--text-dim)">${s.execution_time_ms || 0}ms</span>
+            <span style="margin-left:auto;font-size:0.78rem;color:var(--text-muted)">${timeAgo(s.submitted_at)}</span>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<p style="color:var(--error);padding:24px">Error loading submissions: ${err.message}</p>`;
+      }
+    }
+
+    // ── Tab Switching ─────────────────────────────────────────────
+    function switchProblemTab(tab) {
+      document.querySelectorAll('.problem-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.getElementById('tab-description').style.display = tab === 'description' ? '' : 'none';
+      document.getElementById('tab-submissions').style.display = tab === 'submissions' ? '' : 'none';
+      if (tab === 'submissions') loadSubmissions();
+    }
+
+    function switchOutputTab(tab) {
+      document.querySelectorAll('.output-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+      document.querySelectorAll('.output-pane').forEach(p => p.classList.remove('active'));
+      document.getElementById(`pane-${tab}`).classList.add('active');
+    }
+
+    // ── Resizing ──────────────────────────────────────────────────
+    (function setupResize() {
+      // Vertical resize (output panel height)
+      const vHandle = document.getElementById('v-resize');
+      const outputPanel = document.getElementById('output-panel');
+      let startY, startH;
+
+      vHandle.addEventListener('mousedown', (e) => {
+        startY = e.clientY;
+        startH = outputPanel.offsetHeight;
+        document.body.style.cursor = 'row-resize';
+        document.body.style.userSelect = 'none';
+
+        function onMove(e) {
+          const delta = startY - e.clientY;
+          outputPanel.style.height = Math.max(100, Math.min(600, startH + delta)) + 'px';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+
+      // Horizontal resize (problem panel width)
+      const hHandle = document.getElementById('h-resize');
+      const problemPanel = document.getElementById('problem-panel');
+      let startX, startW;
+
+      hHandle.addEventListener('mousedown', (e) => {
+        startX = e.clientX;
+        startW = problemPanel.offsetWidth;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        function onMove(e) {
+          const delta = e.clientX - startX;
+          const newW = Math.max(280, Math.min(window.innerWidth * 0.6, startW + delta));
+          problemPanel.style.width = newW + 'px';
+        }
+        function onUp() {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+      });
+    })();
+
+    // ── Utilities ─────────────────────────────────────────────────
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    function escapeAttr(text) {
+      return (text || '').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+    }
+
+    function renderMarkdown(text) {
+      // Simple markdown-like rendering
+      return (text || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/^/, '<p>').replace(/$/, '</p>');
+    }
+
+    function copyText(btn, text) {
+      const decoded = text.replace(/\\n/g, '\n').replace(/\\'/g, "'");
+      navigator.clipboard.writeText(decoded).then(() => {
+        const orig = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = orig, 1500);
+      });
+    }
+
+    function getVerdictClass(status) {
+      const map = {
+        'Accepted': 'verdict-accepted',
+        'Wrong Answer': 'verdict-wa',
+        'Time Limit Exceeded': 'verdict-tle',
+        'Runtime Error': 'verdict-re',
+        'Compilation Error': 'verdict-ce',
+        'Partial': 'verdict-partial',
+        'Pending': 'verdict-pending',
+        'Running': 'verdict-pending',
+        'Internal Error': 'verdict-re'
+      };
+      return map[status] || 'verdict-pending';
+    }
+
+    function timeAgo(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diff = Math.floor((now - d) / 1000);
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return d.toLocaleDateString();
+    }
+  </script>
+</body>
+</html>
