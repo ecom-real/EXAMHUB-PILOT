@@ -242,7 +242,6 @@
     </div>
   </div>
 
-  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
   <script src="/js/app.js"></script>
   <script>
     requireAuth('student');
@@ -255,22 +254,13 @@
     document.getElementById('welcome-heading').textContent = `Welcome, ${user.name?.split(' ')[0] || 'Candidate'}!`;
     buildNavbar('My Exams');
 
-    let allExams = [], allResults = [], allPaymentStatuses = {};
+    let allExams = [], allResults = [];
 
     async function loadDashboard() {
       try {
         const [exams, results] = await Promise.all([apiFetch('/exams'), apiFetch('/results/mine')]);
         allExams   = exams;
         allResults = results;
-
-        // Payment status checks
-        await Promise.all(exams.map(async (exam) => {
-          try {
-            allPaymentStatuses[exam.id] = await apiFetch(`/payments/check/${exam.id}`);
-          } catch {
-            allPaymentStatuses[exam.id] = { free: true, paid: true, price: 0 };
-          }
-        }));
 
         // Stats
         const completedIds = new Set(results.filter(r => r.status !== 'in_progress').map(r => r.exam_id));
@@ -304,8 +294,7 @@
       const filtered = allExams.filter(exam => {
         const myResult  = allResults.find(r => r.exam_id === exam.id && r.status !== 'in_progress');
         const inProgr   = allResults.find(r => r.exam_id === exam.id && r.status === 'in_progress');
-        const ps        = allPaymentStatuses[exam.id] || { free: true, paid: true };
-        if (val === 'available')   return !myResult && !inProgr && (ps.paid || ps.free);
+        if (val === 'available')   return !myResult && !inProgr;
         if (val === 'completed')   return !!myResult;
         if (val === 'in_progress') return !!inProgr;
         return true;
@@ -332,36 +321,25 @@
         const inProgress = results.find(r => r.exam_id === exam.id && r.status === 'in_progress');
         const done       = !!myResult;
         const totalSecs  = exam.exam_sections?.length || 0;
-        const ps         = allPaymentStatuses[exam.id] || { free: true, paid: true, price: 0 };
-        const isPaid     = ps.paid;
-        const isFree     = ps.free;
-        const examPrice  = ps.price || 0;
 
         // Determine card status class
         let statusClass;
-        if (done)                    statusClass = myResult.passed ? 'status-done-pass' : 'status-done-fail';
-        else if (inProgress)         statusClass = 'status-in-progress';
-        else if (!isPaid && !isFree) statusClass = 'status-locked';
-        else                         statusClass = 'status-available';
+        if (done)            statusClass = myResult.passed ? 'status-done-pass' : 'status-done-fail';
+        else if (inProgress) statusClass = 'status-in-progress';
+        else                 statusClass = 'status-available';
 
         // Badge HTML
         let statusBadge;
-        if (done)                    statusBadge = myResult.passed
-                                       ? '<span class="badge badge-success">✓ Passed</span>'
-                                       : '<span class="badge badge-danger">✕ Failed</span>';
-        else if (inProgress)         statusBadge = '<span class="badge badge-warning">⏸ In Progress</span>';
-        else if (!isPaid && !isFree) statusBadge = '<span class="badge badge-grey" style="background:#fef3c7;color:#92400e;border-color:#fde68a">🔒 Locked</span>';
-        else                         statusBadge = '<span class="badge badge-blue">Available</span>';
+        if (done)            statusBadge = myResult.passed
+                               ? '<span class="badge badge-success">✓ Passed</span>'
+                               : '<span class="badge badge-danger">✕ Failed</span>';
+        else if (inProgress) statusBadge = '<span class="badge badge-warning">⏸ In Progress</span>';
+        else                 statusBadge = '<span class="badge badge-blue">Available</span>';
 
         // Action button
         let actionBtn;
         if (done) {
           actionBtn = `<a href="/student/results.html?id=${myResult.id}" class="btn btn-secondary btn-sm">View Result →</a>`;
-        } else if (!isPaid && !isFree) {
-          actionBtn = `<button id="pay-btn-${exam.id}" class="btn btn-primary"
-                         onclick="handlePayment('${exam.id}','${esc(exam.title)}')">
-                         💳 Pay ₹${examPrice.toFixed(0)} &amp; Unlock
-                       </button>`;
         } else if (inProgress) {
           actionBtn = `<a href="/student/exam.html?id=${exam.id}" class="btn btn-warning btn-sm">▶ Resume Exam</a>`;
         } else {
@@ -392,9 +370,8 @@
             <div class="exam-card-header">
               <div class="exam-card-left">
                 <div class="exam-card-title-row">
-                  <h3 class="exam-card-title">${!isPaid && !isFree ? '🔒 ' : ''}${esc(exam.title)}</h3>
+                  <h3 class="exam-card-title">${esc(exam.title)}</h3>
                   ${exam.exam_code ? `<span class="badge badge-grey">${esc(exam.exam_code)}</span>` : ''}
-                  ${!isFree ? `<span class="badge badge-purple">₹${examPrice.toFixed(0)}</span>` : ''}
                   ${statusBadge}
                 </div>
                 <p class="exam-card-desc">${esc(exam.description || 'No description provided.')}</p>
@@ -416,69 +393,6 @@
     }
 
     loadDashboard();
-
-    // ── Razorpay Payment Handler ──────────────────────────────────
-    async function handlePayment(examId, examTitle) {
-      const btn = document.getElementById(`pay-btn-${examId}`);
-      if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
-      try {
-        const orderData = await apiFetch('/payments/create-order', {
-          method: 'POST',
-          body: { exam_id: examId }
-        });
-        if (orderData.free || orderData.already_paid) {
-          showToast('Exam is now unlocked!', 'success');
-          await loadDashboard();
-          return;
-        }
-        const options = {
-          key:         orderData.key_id,
-          amount:      orderData.amount,
-          currency:    orderData.currency,
-          name:        'ExamHub',
-          description: orderData.exam_title,
-          order_id:    orderData.order_id,
-          prefill:     { name: orderData.student_name, email: orderData.student_email },
-          theme:       { color: '#4f46e5' },
-          handler: async function (response) {
-            try {
-              showLoading('Verifying payment…');
-              await apiFetch('/payments/verify', {
-                method: 'POST',
-                body: {
-                  razorpay_order_id:   response.razorpay_order_id,
-                  razorpay_payment_id: response.razorpay_payment_id,
-                  razorpay_signature:  response.razorpay_signature
-                }
-              });
-              hideLoading();
-              showToast('Payment successful! Exam unlocked 🎉', 'success');
-              await loadDashboard();
-            } catch (err) {
-              hideLoading();
-              showToast('Verification failed: ' + err.message, 'error');
-            }
-          },
-          modal: {
-            ondismiss: function () {
-              if (btn) {
-                btn.disabled    = false;
-                btn.textContent = `Pay ₹${(orderData.amount / 100).toFixed(0)} & Unlock`;
-              }
-            }
-          }
-        };
-        const rzp = new Razorpay(options);
-        rzp.on('payment.failed', function (r) {
-          showToast('Payment failed: ' + r.error.description, 'error');
-          if (btn) { btn.disabled = false; btn.textContent = `Pay ₹${(orderData.amount / 100).toFixed(0)} & Unlock`; }
-        });
-        rzp.open();
-      } catch (err) {
-        showToast('Error: ' + err.message, 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Pay & Unlock'; }
-      }
-    }
 
     function esc(s) { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
   </script>

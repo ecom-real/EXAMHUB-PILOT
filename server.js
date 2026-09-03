@@ -64,9 +64,12 @@ const pdfLimiter = rateLimit({
 });
 
 // ── Allowed Origins (set CORS_ORIGINS env var as comma-separated list) ────────
+// In production (Netlify/Vercel), set CORS_ORIGINS to your deployed domain.
+// If CORS_ORIGINS is not set, allow all origins (open) — needed when the
+// API and frontend share the same Netlify domain (same-origin requests).
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:3000'];
+  : null; // null = allow all origins
 
 // Middleware
 app.use(helmet({
@@ -74,8 +77,11 @@ app.use(helmet({
 }));
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, curl, Postman)
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow requests with no origin (server-to-server, curl, Postman, same-origin)
+    if (!origin) return callback(null, true);
+    // If no allowedOrigins configured, permit all
+    if (!allowedOrigins) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true
@@ -282,26 +288,45 @@ app.get('/api/exams/:id', authenticate, async (req, res) => {
 });
 
 // Allowed fields for exam create/update (whitelist to prevent injection of unexpected columns)
-const EXAM_ALLOWED_FIELDS = [
+// Core fields always present in schema:
+const EXAM_CORE_FIELDS = [
   'title', 'exam_code', 'description', 'instructions',
   'total_duration', 'total_marks', 'pass_percentage',
   'is_published', 'shuffle_questions', 'shuffle_options',
-  'show_result', 'enable_certificate', 'price', 'exam_type'
+  'show_result', 'price'
 ];
-function pickExamFields(body) {
+// Optional fields that may not exist yet if migration hasn't been run:
+const EXAM_OPTIONAL_FIELDS = ['enable_certificate', 'exam_type'];
+const EXAM_ALLOWED_FIELDS = [...EXAM_CORE_FIELDS, ...EXAM_OPTIONAL_FIELDS];
+
+function pickExamFields(body, exclude = []) {
   return EXAM_ALLOWED_FIELDS.reduce((acc, k) => {
-    if (k in body) acc[k] = body[k];
+    if (k in body && !exclude.includes(k)) acc[k] = body[k];
     return acc;
   }, {});
+}
+
+// Helper: run a Supabase query and, if it fails with a missing-column error (PGRST204),
+// automatically retry without the optional columns that caused it.
+async function safeExamQuery(queryFn) {
+  let { data, error } = await queryFn([]);  // first try: all fields, no exclusions
+  if (error && error.code === 'PGRST204') {
+    // Strip optional columns and retry
+    console.warn('safeExamQuery: missing optional exam columns, retrying without them:', EXAM_OPTIONAL_FIELDS);
+    ({ data, error } = await queryFn(EXAM_OPTIONAL_FIELDS));
+  }
+  return { data, error };
 }
 
 // Create exam (admin)
 app.post('/api/exams', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('exams').insert({
-      ...pickExamFields(req.body),
-      created_by: req.user.id
-    }).select().single();
+    const { data, error } = await safeExamQuery((exclude) =>
+      supabase.from('exams').insert({
+        ...pickExamFields(req.body, exclude),
+        created_by: req.user.id
+      }).select().single()
+    );
     if (error) throw error;
     res.json(data);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -310,7 +335,9 @@ app.post('/api/exams', authenticate, requireAdmin, async (req, res) => {
 // Update exam (admin)
 app.put('/api/exams/:id', authenticate, requireAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase.from('exams').update(pickExamFields(req.body)).eq('id', req.params.id).select().single();
+    const { data, error } = await safeExamQuery((exclude) =>
+      supabase.from('exams').update(pickExamFields(req.body, exclude)).eq('id', req.params.id).select().single()
+    );
     if (error) throw error;
     res.json(data);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -947,175 +974,6 @@ app.get('/api/users', authenticate, requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// RAZORPAY PAYMENT ROUTES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// Lazy-init Razorpay instance (only if keys present)
-function getRazorpay() {
-  const Razorpay = require('razorpay');
-  if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET ||
-      process.env.RAZORPAY_KEY_ID.includes('XXXX')) {
-    throw new Error('Razorpay API keys are not configured. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env');
-  }
-  return new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
-  });
-}
-
-// POST /api/payments/create-order
-// Creates a Razorpay order for a given exam. Student must be authenticated.
-app.post('/api/payments/create-order', authenticate, async (req, res) => {
-  try {
-    const { exam_id } = req.body;
-    if (!exam_id) return res.status(400).json({ error: 'exam_id is required' });
-
-    // Fetch exam to get price
-    const { data: exam, error: examErr } = await supabase.from('exams').select('id, title, price, is_published').eq('id', exam_id).single();
-    if (examErr || !exam) return res.status(404).json({ error: 'Exam not found' });
-    if (!exam.is_published) return res.status(403).json({ error: 'Exam is not available' });
-
-    const price = parseFloat(exam.price || 0);
-    if (price <= 0) return res.json({ free: true, message: 'This exam is free' });
-
-    // Check if student already has a successful payment for this exam
-    const { data: existingPayment } = await supabase
-      .from('payments')
-      .select('id, status')
-      .eq('student_id', req.user.id)
-      .eq('exam_id', exam_id)
-      .eq('status', 'paid')
-      .maybeSingle();
-
-    if (existingPayment) {
-      return res.json({ already_paid: true, message: 'You have already paid for this exam' });
-    }
-
-    // Create Razorpay order (amount in paise)
-    const instance = getRazorpay();
-    const order = await instance.orders.create({
-      amount: Math.round(price * 100),
-      currency: 'INR',
-      receipt: `exam_${exam_id}_user_${req.user.id}`.slice(0, 40),
-      notes: {
-        exam_id,
-        student_id: req.user.id,
-        student_name: req.user.name || ''
-      }
-    });
-
-    // Upsert payment record (replace existing 'created' record if retrying)
-    await supabase.from('payments').upsert({
-      student_id: req.user.id,
-      exam_id,
-      razorpay_order_id: order.id,
-      amount: price,
-      currency: 'INR',
-      status: 'created',
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'student_id,exam_id' });
-
-    res.json({
-      order_id: order.id,
-      amount: order.amount,
-      currency: order.currency,
-      key_id: process.env.RAZORPAY_KEY_ID,
-      exam_title: exam.title,
-      student_name: req.user.name || '',
-      student_email: req.user.email || ''
-    });
-  } catch (err) {
-    console.error('Razorpay create-order error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/payments/verify
-// Verifies Razorpay payment signature and marks payment as paid.
-app.post('/api/payments/verify', authenticate, async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-      return res.status(400).json({ error: 'Missing payment verification fields' });
-    }
-
-    // Verify HMAC signature
-    const secret = process.env.RAZORPAY_KEY_SECRET;
-    const expectedSig = crypto
-      .createHmac('sha256', secret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-
-    if (expectedSig !== razorpay_signature) {
-      // Mark payment as failed
-      await supabase.from('payments')
-        .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('razorpay_order_id', razorpay_order_id);
-      return res.status(400).json({ error: 'Payment verification failed: invalid signature' });
-    }
-
-    // Mark payment as paid
-    const { data: payment, error: payErr } = await supabase.from('payments')
-      .update({
-        razorpay_payment_id,
-        razorpay_signature,
-        status: 'paid',
-        updated_at: new Date().toISOString()
-      })
-      .eq('razorpay_order_id', razorpay_order_id)
-      .select()
-      .single();
-
-    if (payErr) throw payErr;
-    res.json({ success: true, payment_id: razorpay_payment_id, exam_id: payment?.exam_id });
-  } catch (err) {
-    console.error('Razorpay verify error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/payments/check/:examId
-// Returns payment and pricing status for the current student and given exam.
-app.get('/api/payments/check/:examId', authenticate, async (req, res) => {
-  try {
-    const { examId } = req.params;
-
-    const { data: exam } = await supabase.from('exams').select('price').eq('id', examId).single();
-    const price = parseFloat(exam?.price || 0);
-
-    if (price <= 0) return res.json({ free: true, paid: true, price: 0 });
-
-    const { data: payment } = await supabase
-      .from('payments')
-      .select('status')
-      .eq('student_id', req.user.id)
-      .eq('exam_id', examId)
-      .eq('status', 'paid')
-      .maybeSingle();
-
-    res.json({ free: false, paid: !!payment, price });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/admin/payments
-// Admin: list all payments with student and exam info.
-app.get('/api/admin/payments', authenticate, requireAdmin, async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('payments')
-      .select('*, users(name, email, roll_number), exams(title, exam_code)')
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    res.json(data || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CODING EXAMS ROUTES — Production
