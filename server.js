@@ -97,25 +97,21 @@ async function authenticate(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
   try {
-    const jwtSecret = process.env.SUPABASE_JWT_SECRET;
-    if (!jwtSecret) {
-      console.error('Missing SUPABASE_JWT_SECRET in environment variables. JWT validation failed.');
-      return res.status(500).json({ error: 'Server misconfiguration' });
+    // Validate token by asking Supabase Auth directly — avoids Base64/secret issues
+    const { data: { user: authUser }, error: authErr } = await supabase.auth.getUser(token);
+    if (authErr || !authUser) {
+      const msg = authErr?.message || '';
+      if (msg.includes('expired') || msg.includes('JWT expired')) {
+        return res.status(401).json({ error: 'Token expired' });
+      }
+      return res.status(401).json({ error: 'Authentication failed' });
     }
-
-    // Verify token locally without hitting the Supabase Auth API
-    const decoded = jwt.verify(token, jwtSecret);
-    const userId = decoded.sub; // Supabase uses 'sub' for user id
-    if (!userId) return res.status(401).json({ error: 'Invalid token payload' });
 
     // Get user profile (role etc.)
-    const { data: profile } = await supabase.from('users').select('*').eq('id', userId).single();
-    req.user = { id: userId, ...profile };
+    const { data: profile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+    req.user = { id: authUser.id, ...profile };
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' });
-    }
     return res.status(401).json({ error: 'Authentication failed' });
   }
 }
