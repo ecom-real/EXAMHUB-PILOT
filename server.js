@@ -97,21 +97,25 @@ async function authenticate(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
   try {
-    // Validate token by asking Supabase Auth directly — avoids Base64/secret issues
-    const { data: { user: authUser }, error: authErr } = await supabase.auth.getUser(token);
+    // Use anon client to validate the user token (service role client ignores the token)
+    const { data: { user: authUser }, error: authErr } = await supabaseAuthClient.auth.getUser(token);
     if (authErr || !authUser) {
       const msg = authErr?.message || '';
+      console.error('[auth] getUser failed:', msg);
       if (msg.includes('expired') || msg.includes('JWT expired')) {
         return res.status(401).json({ error: 'Token expired' });
       }
       return res.status(401).json({ error: 'Authentication failed' });
     }
 
-    // Get user profile (role etc.)
-    const { data: profile } = await supabase.from('users').select('*').eq('id', authUser.id).single();
+    // Get user profile (role etc.) using service role client
+    const { data: profile, error: profileErr } = await supabase
+      .from('users').select('*').eq('id', authUser.id).single();
+    if (profileErr) console.error('[auth] profile fetch error:', profileErr.message);
     req.user = { id: authUser.id, ...profile };
     next();
   } catch (err) {
+    console.error('[auth] unexpected error:', err.message);
     return res.status(401).json({ error: 'Authentication failed' });
   }
 }
@@ -178,6 +182,7 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
     if (!profile.is_active) return res.status(403).json({ error: 'Account is deactivated. Contact admin.' });
 
+    console.log('[login] success for', data.user.id, '| token length:', data.session.access_token?.length);
     res.json({ token: data.session.access_token, user: profile });
   } catch (err) {
     console.error('Login error:', err.message);
@@ -187,6 +192,20 @@ app.post('/api/auth/login', authLimiter, async (req, res) => {
 
 // Get current user
 app.get('/api/auth/me', authenticate, (req, res) => res.json({ user: req.user }));
+
+// Debug: test token validation without full profile fetch (remove after debugging)
+app.get('/api/auth/ping', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.json({ ok: false, reason: 'no token' });
+  const { data: { user }, error } = await supabaseAuthClient.auth.getUser(token);
+  res.json({
+    ok: !!user && !error,
+    userId: user?.id || null,
+    error: error?.message || null,
+    tokenLength: token.length,
+    supabaseUrl: supabaseUrl.substring(0, 30) + '...'
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ADMIN - STUDENT MANAGEMENT ROUTES
