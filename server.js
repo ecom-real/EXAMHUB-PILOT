@@ -9,6 +9,7 @@ const fs = require('fs');
 const multer = require('multer');
 const { GoogleGenAI } = require('@google/genai');
 const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
 
 // Initialize Gemini Client
 const ai = process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null;
@@ -45,10 +46,10 @@ const apiLimiter = rateLimit({
   message: { error: 'Too many requests, please slow down.' }
 });
 
-// Auth routes: 10 attempts per 15 minutes (brute-force protection)
+// Auth routes: 100 attempts per 15 minutes (brute-force protection)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 100,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many login attempts. Please try again after 15 minutes.' }
@@ -88,7 +89,6 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '5mb' }));
 app.use('/api', apiLimiter);                        // apply general limit to all /api routes
-app.use('/api/auth', authLimiter);                  // stricter limit on auth routes
 app.use('/api/questions/parse-pdf', pdfLimiter);    // limit Gemini PDF calls
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -97,16 +97,26 @@ async function authenticate(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
   try {
-    // Verify token with Supabase (use anon client so JWT is properly validated, not bypassed)
-    const { data: { user }, error } = await supabaseAuthClient.auth.getUser(token);
-    if (error || !user) return res.status(401).json({ error: 'Invalid or expired token' });
+    const jwtSecret = process.env.SUPABASE_JWT_SECRET;
+    if (!jwtSecret) {
+      console.error('Missing SUPABASE_JWT_SECRET in environment variables. JWT validation failed.');
+      return res.status(500).json({ error: 'Server misconfiguration' });
+    }
+
+    // Verify token locally without hitting the Supabase Auth API
+    const decoded = jwt.verify(token, jwtSecret);
+    const userId = decoded.sub; // Supabase uses 'sub' for user id
+    if (!userId) return res.status(401).json({ error: 'Invalid token payload' });
 
     // Get user profile (role etc.)
-    const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
-    req.user = { ...user, ...profile };
+    const { data: profile } = await supabase.from('users').select('*').eq('id', userId).single();
+    req.user = { id: userId, ...profile };
     next();
   } catch (err) {
-    res.status(401).json({ error: 'Authentication failed' });
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    return res.status(401).json({ error: 'Authentication failed' });
   }
 }
 
@@ -127,7 +137,7 @@ app.get('/api/config', authenticate, (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // Register new student
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, async (req, res) => {
   try {
     const { name, email, password, roll_number, phone, dob, gender } = req.body;
     if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password required' });
@@ -155,7 +165,7 @@ app.post('/api/auth/register', async (req, res) => {
 });
 
 // Login
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
@@ -1543,7 +1553,9 @@ app.use((req, res) => {
 });
 
 // ── Start Server ───────────────────────────────────────────────────────────────
-if (!process.env.VERCEL) {
+// Skip listen() when running as a serverless function (Netlify/Vercel)
+const isServerless = process.env.VERCEL || process.env.NETLIFY || process.env.LAMBDA_TASK_ROOT;
+if (!isServerless) {
   app.listen(PORT, () => {
     console.log(`\n🚀 ExamHub v2 running at http://localhost:${PORT}`);
     console.log(`   Supabase: ${supabaseUrl}`);
